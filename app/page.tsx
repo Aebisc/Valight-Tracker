@@ -71,7 +71,7 @@ export default function Home() {
       <main style={{ flex: 1, width: "100%", maxWidth: 1200, margin: "0 auto", padding: "56px 32px 56px", position: "relative", zIndex: 1 }}>
         {loading ? (
           <Splash>
-            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 28, color: "var(--ink-muted)" }}>Valorant Tracker</div>
+            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 28, color: "var(--ink-muted)" }}>VaLight Tracker</div>
             <div style={{ position: "relative", width: 64, height: 64, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <div style={{ width: 36, height: 36, border: "2px solid var(--accent)", borderTopColor: "transparent", borderRadius: "50%" }} className="a-spin" />
             </div>

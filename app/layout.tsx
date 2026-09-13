@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "../components/toast";
+import UpdaterCard from "../components/updater-card";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -25,8 +26,8 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Valorant Tracker",
-    template: "%s | Valorant Tracker",
+    default: "VaLight Tracker",
+    template: "%s | VaLight Tracker",
   },
   description:
     "Track your Valorant stats, match history, and rank progression in real time.",
@@ -40,7 +41,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${dmSans.variable} ${jetbrainsMono.variable}`}>
       <body suppressHydrationWarning>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          {children}
+          <UpdaterCard />
+        </ToastProvider>
       </body>
     </html>
   );

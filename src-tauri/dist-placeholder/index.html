@@ -1,0 +1,11 @@
+<!--
+  This file is never shown to users. The app's real UI is served by the
+  bundled Next.js sidecar (see src-tauri/src/main.rs), which the window
+  navigates to at runtime via WebviewUrl::External.
+
+  Tauri's config schema requires `build.frontendDist` to point at some
+  valid static-assets folder even when it's unused, so this placeholder
+  exists purely to satisfy that validation.
+-->
+<!DOCTYPE html>
+<html><body></body></html>
