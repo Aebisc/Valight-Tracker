@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "prepare:sidecar": "powershell -ExecutionPolicy Bypass -File scripts/prepare-sidecar.ps1"
+    "prepare:sidecar": "powershell -ExecutionPolicy Bypass -File scripts/prepare-sidecar.ps1",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
