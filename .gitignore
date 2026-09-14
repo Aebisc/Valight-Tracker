@@ -37,3 +37,8 @@ src-tauri/binaries/
 src-tauri/resources/server/
 src-tauri/gen/
 Setup.md
+MANUAL_RELEASE.md
+latest.json
+*.sig
+*.key
+

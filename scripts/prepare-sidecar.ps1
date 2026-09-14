@@ -13,7 +13,7 @@
 # to match, or pass it as -NodeExePath.
 
 param(
-    [string]$NodeExePath = "C:\node-portable\node.exe"
+    [string]$NodeExePath = "C:\Github\test\node-v26.8.1-win-x64\node.exe"
 )
 
 $ErrorActionPreference = "Stop"
