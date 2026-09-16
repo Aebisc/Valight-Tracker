@@ -113,7 +113,7 @@
         </div>
       </div>
 
-      <!-- Live Mockup Window -->
+      <!-- Real App Showcase with Dual View Tabs -->
       <div class="mockup-wrapper">
         <div class="mockup-glow"></div>
         <div class="mockup-window">
@@ -123,94 +123,36 @@
               <div class="dot"></div>
               <div class="dot"></div>
             </div>
-            <div class="window-title">VaLight Tracker — Agent Select (Haven)</div>
-            <div style="width: 40px;"></div>
+
+            <!-- View Switcher Tabs -->
+            <div class="mockup-tabs">
+              <button type="button" class="mockup-tab active" data-target="img-match">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                10-Player Lobby & Parties
+              </button>
+              <button type="button" class="mockup-tab" data-target="img-details">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="16" x2="12" y2="12"/>
+                  <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                Detailed Player Performance
+              </button>
+            </div>
+
+            <div style="font-size: 11px; color: var(--ink-dim); font-family: var(--font-mono);">
+              Live Preview
+            </div>
           </div>
 
           <div class="window-body">
-            <!-- Mockup Lobby Header -->
-            <div class="mockup-header-card">
-              <div>
-                <span class="mockup-mode-badge">Competitive</span>
-                <h3 class="mockup-map-title">Haven</h3>
-              </div>
-              <div style="text-align: right;">
-                <div style="font-size: 11px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 1px;">Server</div>
-                <div style="font-size: 13px; font-weight: 600; color: var(--ink);">Frankfurt 1</div>
-              </div>
-            </div>
-
-            <!-- Mockup Table -->
-            <div style="overflow-x: auto;">
-              <table class="mockup-table">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Current Rank</th>
-                    <th>Peak Rank</th>
-                    <th>K/D</th>
-                    <th>HS%</th>
-                    <th>ADR</th>
-                    <th>Party</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr class="row-item">
-                    <td>
-                      <div class="player-cell">
-                        <div class="agent-avatar" style="background: rgba(244, 63, 94, 0.2); color: #f43f5e;">J</div>
-                        <div>
-                          <div>TenZ <span style="font-size: 11px; color: var(--ink-dim);">#NA1</span></div>
-                          <div style="font-size: 10px; color: var(--ink-faint);">Level 342</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span class="rank-badge rank-immortal">Immortal 3 (380 RR)</span></td>
-                    <td><span class="rank-badge rank-immortal">Radiant</span></td>
-                    <td class="stat-mono" style="color: var(--up); font-weight: 700;">1.42</td>
-                    <td class="stat-mono">36.4%</td>
-                    <td class="stat-mono">168.2</td>
-                    <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 600;">Party 1</span></td>
-                  </tr>
-
-                  <tr class="row-item">
-                    <td>
-                      <div class="player-cell">
-                        <div class="agent-avatar" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">O</div>
-                        <div>
-                          <div>Chronicle <span style="font-size: 11px; color: var(--ink-dim);">#EU</span></div>
-                          <div style="font-size: 10px; color: var(--ink-faint);">Level 289</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span class="rank-badge rank-immortal">Immortal 2 (240 RR)</span></td>
-                    <td><span class="rank-badge rank-immortal">Radiant</span></td>
-                    <td class="stat-mono" style="color: var(--up); font-weight: 700;">1.28</td>
-                    <td class="stat-mono">31.0%</td>
-                    <td class="stat-mono">154.0</td>
-                    <td><span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(99, 102, 241, 0.2); color: #818cf8; font-weight: 600;">Party 1</span></td>
-                  </tr>
-
-                  <tr class="row-item">
-                    <td>
-                      <div class="player-cell">
-                        <div class="agent-avatar" style="background: rgba(192, 132, 252, 0.2); color: #c084fc;">S</div>
-                        <div>
-                          <div>Kyedae <span style="font-size: 11px; color: var(--ink-dim);">#999</span></div>
-                          <div style="font-size: 10px; color: var(--ink-faint);">Level 195</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span class="rank-badge rank-ascendant">Ascendant 3 (62 RR)</span></td>
-                    <td><span class="rank-badge rank-immortal">Immortal 1</span></td>
-                    <td class="stat-mono">1.05</td>
-                    <td class="stat-mono">24.2%</td>
-                    <td class="stat-mono">132.8</td>
-                    <td><span style="font-size: 11px; color: var(--ink-faint);">Solo</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <img id="img-match" class="mockup-screenshot" src="assets/screenshot-match.png" alt="VaLight Tracker Full Match Scouting and Party Detection" width="1024" height="733" />
+            <img id="img-details" class="mockup-screenshot" src="assets/screenshot-details.png" alt="VaLight Tracker In-Depth Player Analytics and Shot Distribution" width="1024" height="731" style="display: none;" />
           </div>
         </div>
       </div>

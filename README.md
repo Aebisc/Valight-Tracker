@@ -15,6 +15,10 @@
 
 [**Download Latest Release (.exe)**](https://github.com/Aebisc/Valight-Tracker/releases/latest) • [**Features**](#-features) • [**How It Works**](#-how-it-works) • [**Development**](#-development)
 
+<br /><br />
+
+<img src="docs/assets/screenshot-match.png" alt="VaLight Tracker Full Match Scouting" width="920" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+
 </div>
 
 ---
@@ -44,10 +48,15 @@ Most existing Valorant trackers are bloated with invasive overlays, heavy browse
   - **Win Rate**, Account Level, and recent competitive match streak (**W / L / D**).
 
 - **👥 Party Detection:**
-  - Instantly identifies who is queued together with color-coded party badges.
+  - Instantly identifies who is queued together with color-coded party badges (Party 1, Party 2).
+
+<div align="center">
+  <img src="docs/assets/screenshot-details.png" alt="VaLight Tracker In-Depth Player Analytics" width="920" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+</div>
 
 - **🎨 Modern Dark UI:**
   - Elegant glassmorphism dark theme designed specifically for multi-monitor setups.
+  - Expandable player drawer showing **shot distribution (Head/Body/Legs %)**, previous match history, and performance stats.
   - Quick-action buttons (copy lobby details, manual refresh).
 
 ---

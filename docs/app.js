@@ -58,4 +58,24 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   fetchLatestRelease();
+
+  // Interactive Screenshot Tabs Switcher
+  const mockupTabs = document.querySelectorAll(".mockup-tab");
+  const mockupScreenshots = document.querySelectorAll(".mockup-screenshot");
+
+  mockupTabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      mockupTabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+
+      const targetId = tab.getAttribute("data-target");
+      mockupScreenshots.forEach(img => {
+        if (img.id === targetId) {
+          img.style.display = "block";
+        } else {
+          img.style.display = "none";
+        }
+      });
+    });
+  });
 });

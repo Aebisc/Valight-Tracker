@@ -345,18 +345,21 @@ button {
 }
 
 .window-header {
-  height: 44px;
-  background: rgba(0, 0, 0, 0.35);
+  min-height: 48px;
+  background: rgba(0, 0, 0, 0.45);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 8px 18px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .window-dots {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .dot {
@@ -366,15 +369,51 @@ button {
   background: var(--surface-3);
 }
 
-.window-title {
-  font-size: 12px;
-  font-weight: 600;
+.mockup-tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mockup-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--ink-dim);
-  letter-spacing: 0.5px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mockup-tab:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.mockup-tab.active {
+  color: #fff;
+  background: var(--surface-3);
+  border-color: var(--border-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.mockup-screenshot {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  transition: opacity 0.25s ease;
 }
 
 .window-body {
-  padding: 24px;
+  padding: 0;
+  background: #07070a;
 }
 
 /* Mockup Content Styling */
