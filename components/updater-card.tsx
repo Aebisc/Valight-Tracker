@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 
 type UpdateStatus = "idle" | "available" | "downloading" | "installing" | "error";
+
+interface AppUpdate {
+  currentVersion: string;
+  version: string;
+  body: string;
+  url: string;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -14,7 +20,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function UpdaterCard() {
-  const [update, setUpdate] = useState<Update | null>(null);
+  const [update, setUpdate] = useState<AppUpdate | null>(null);
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [dismissed, setDismissed] = useState(false);
   const [totalBytes, setTotalBytes] = useState(0);
@@ -22,21 +28,21 @@ export default function UpdaterCard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const checkForUpdate = useCallback(async () => {
-    // Only check if running inside Tauri
-    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-      return;
-    }
-
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const foundUpdate = await check();
+      const res = await fetch("/api/update", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
 
-      if (foundUpdate) {
-        setUpdate(foundUpdate);
+      if (data.available && data.version && data.url) {
+        setUpdate({
+          currentVersion: data.currentVersion,
+          version: data.version,
+          body: data.notes || "Bug fixes and performance improvements.",
+          url: data.url,
+        });
         setStatus("available");
       }
     } catch (err) {
-      // If the check fails (e.g. no internet), keep it silent unless triggered manually
       console.warn("Silent update check could not reach release endpoint:", err);
     }
   }, []);
@@ -45,13 +51,19 @@ export default function UpdaterCard() {
     // Delay check slightly to let main window and sidecar complete startup
     const timer = setTimeout(() => {
       checkForUpdate();
-    }, 1500);
+    }, 2000);
 
-    return () => clearTimeout(timer);
+    // Periodically re-check every 30 minutes
+    const interval = setInterval(checkForUpdate, 30 * 60 * 1000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [checkForUpdate]);
 
   const handleUpdate = async () => {
-    if (!update) return;
+    if (!update?.url) return;
 
     setStatus("downloading");
     setErrorMessage(null);
@@ -59,34 +71,49 @@ export default function UpdaterCard() {
     setTotalBytes(0);
 
     try {
-      let downloaded = 0;
-      let total = 0;
-
-      await update.download((event: DownloadEvent) => {
-        if (event.event === "Started") {
-          total = event.data.contentLength ?? 0;
-          setTotalBytes(total);
-        } else if (event.event === "Progress") {
-          downloaded += event.data.chunkLength;
-          setDownloadedBytes(downloaded);
-        } else if (event.event === "Finished") {
-          setStatus("installing");
-        }
+      const response = await fetch("/api/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: update.url }),
       });
 
-      setStatus("installing");
-
-      // Stop the bundled Node.js server sidecar cleanly before restarting
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("stop_server");
-      } catch (err) {
-        console.warn("Could not stop background server before update:", err);
+      if (!response.ok || !response.body) {
+        throw new Error(`Download failed with status ${response.status}`);
       }
 
-      // Launch the installer and restart the application
-      await update.install({ restartAfterInstall: true });
-    } catch (err) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          try {
+            const payload = JSON.parse(trimmed.replace(/^data:\s*/, ""));
+            if (payload.event === "Started") {
+              setTotalBytes(payload.total || 0);
+            } else if (payload.event === "Progress") {
+              setDownloadedBytes(payload.downloaded || 0);
+              if (payload.total) setTotalBytes(payload.total);
+            } else if (payload.event === "Finished") {
+              setStatus("installing");
+            } else if (payload.event === "Error") {
+              throw new Error(payload.message || "Error during update download");
+            }
+          } catch {
+            // Ignore parse errors on partial stream chunks
+          }
+        }
+      }
+    } catch (err: any) {
       console.error("Update failed:", err);
       setStatus("error");
       setErrorMessage(
