@@ -88,7 +88,7 @@ function Badge({ type }: { type: BadgeType }) {
       color: config.color,
       border: `1px solid ${config.border}`,
       boxShadow: type === "mvp" ? "0 0 8px rgba(251, 191, 36, 0.2)" : "none",
-      transition: "all 0.2s ease",
+      transition: "color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease",
       whiteSpace: "nowrap",
       flexShrink: 0,
     }}>

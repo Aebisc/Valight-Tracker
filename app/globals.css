@@ -73,7 +73,7 @@ body {
 ::placeholder { color: var(--ink-faint); }
 
 a, button, [role="button"], input, select, textarea {
-  transition: all 0.2s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
 }
 
 *:focus-visible {
@@ -219,7 +219,7 @@ a, button, [role="button"], input, select, textarea {
   padding: 12px 16px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .player-row:hover {
   background: var(--surface-1);
