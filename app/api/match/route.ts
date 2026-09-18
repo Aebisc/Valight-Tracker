@@ -201,21 +201,17 @@ function assignPartyNumbers(
   return updated;
 }
 
-// Sized to comfortably hold ~20 recent games for up to 10 players in a single lobby
-// without evicting entries mid-session (details are keyed by immutable match id).
-const MAX_MATCH_DETAIL_CACHE = 250;
+// Persistent LRU cache sized to comfortably hold ~20 recent games for up to 25 players
+// across matches (~500 matches ≈ 4-5MB of RAM). Details are keyed by immutable match id.
+const MAX_MATCH_DETAIL_CACHE = 500;
 const matchDetailCache = new Map<string, any>();
-let matchDetailCacheForMatchId: string | null = null;
 
-function cacheMatchDetail(id: string, detail: any, currentMatchId: string) {
-  if (matchDetailCacheForMatchId && matchDetailCacheForMatchId !== currentMatchId) {
-    matchDetailCache.clear();
-  }
-  matchDetailCacheForMatchId = currentMatchId;
-
-  if (matchDetailCache.size >= MAX_MATCH_DETAIL_CACHE) {
-    const first = matchDetailCache.keys().next().value;
-    if (first) matchDetailCache.delete(first);
+function cacheMatchDetail(id: string, detail: any) {
+  if (matchDetailCache.has(id)) {
+    matchDetailCache.delete(id);
+  } else if (matchDetailCache.size >= MAX_MATCH_DETAIL_CACHE) {
+    const oldest = matchDetailCache.keys().next().value;
+    if (oldest) matchDetailCache.delete(oldest);
   }
   matchDetailCache.set(id, detail);
 }
@@ -544,8 +540,6 @@ export async function GET(request: Request) {
 
     if (matchCache && matchCache.matchId !== resolvedMatchId) {
       matchCache = null;
-      matchDetailCache.clear();
-      matchDetailCacheForMatchId = null;
     }
 
     if (matchCache && matchCache.matchId === resolvedMatchId) {
@@ -594,7 +588,13 @@ export async function GET(request: Request) {
     const uniqueMatchIds = new Set<string>();
     for (const p of validPlayers) {
       for (const mid of p._recentMatchIds ?? []) {
-        if (!matchDetailCache.has(mid)) uniqueMatchIds.add(mid);
+        if (matchDetailCache.has(mid)) {
+          const cached = matchDetailCache.get(mid);
+          matchDetailCache.delete(mid);
+          matchDetailCache.set(mid, cached);
+        } else {
+          uniqueMatchIds.add(mid);
+        }
       }
     }
 
@@ -613,7 +613,7 @@ export async function GET(request: Request) {
       if (detail) detailLookup.set(mid, detail);
     }
     for (const { mid, detail } of detailResults) {
-      if (detail) cacheMatchDetail(mid, detail, resolvedMatchId);
+      if (detail) cacheMatchDetail(mid, detail);
     }
 
     const builtPlayers: ValorantPlayer[] = validPlayers.map((p) => {

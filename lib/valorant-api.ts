@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, open, type FileHandle } from "node:fs/promises";
 import type { LockfileData, ApiConfig } from "./types";
 
 const REGION_CONFIG: Record<string, { pd: string; glz: string; shard: string }> = {
@@ -69,6 +69,47 @@ export function clearApiConfigCache(): void {
   cachedApiConfig = null;
 }
 
+async function extractLogMetadata(logPath: string): Promise<{ region: string; version: string }> {
+  let file: FileHandle | null = null;
+  let region = "na";
+  let version = "unknown";
+
+  try {
+    file = await open(logPath, "r");
+    const CHUNK_SIZE = 64 * 1024; // 64 KB per chunk
+    const MAX_BYTES = 512 * 1024; // Max 512 KB scan window (metadata is in first 35 KB)
+    const buffer = Buffer.alloc(CHUNK_SIZE);
+    let accumulated = "";
+    let totalRead = 0;
+
+    while (totalRead < MAX_BYTES) {
+      const { bytesRead } = await file.read(buffer, 0, CHUNK_SIZE, totalRead);
+      if (bytesRead === 0) break;
+
+      totalRead += bytesRead;
+      accumulated += buffer.toString("utf-8", 0, bytesRead);
+
+      if (region === "na") {
+        const glzMatch = accumulated.match(/https:\/\/glz-(.+?)-\d+\.\1\.a\.pvp\.net/);
+        if (glzMatch) region = glzMatch[1];
+      }
+
+      if (version === "unknown") {
+        const versionMatch = accumulated.match(/release-(\d+\.\d+-shipping-\d+-\d+)/);
+        if (versionMatch) version = versionMatch[1];
+      }
+
+      if (region !== "na" && version !== "unknown") break;
+    }
+  } catch (err) {
+    console.warn("[extractLogMetadata] Could not read ShooterGame.log via stream window:", err);
+  } finally {
+    await file?.close().catch(() => {});
+  }
+
+  return { region, version };
+}
+
 export async function getApiConfig(lockfile: LockfileData, force = false): Promise<ApiConfig> {
   const cacheKey = `${lockfile.port}:${lockfile.password}`;
   if (!force && cachedApiConfig && cachedApiConfig.key === cacheKey) {
@@ -93,13 +134,7 @@ export async function getApiConfig(lockfile: LockfileData, force = false): Promi
   }
 
   const logPath = `${process.env.LOCALAPPDATA}/VALORANT/Saved/Logs/ShooterGame.log`;
-  const logContent = await readFile(logPath, "utf-8");
-
-  const glzMatch = logContent.match(/https:\/\/glz-(.+?)-\d+\.\1\.a\.pvp\.net/);
-  const region = glzMatch ? glzMatch[1] : "na";
-
-  const versionMatch = logContent.match(/release-(\d+\.\d+-shipping-\d+-\d+)/);
-  const version = versionMatch ? versionMatch[1] : "unknown";
+  const { region, version } = await extractLogMetadata(logPath);
 
   const regionConfig = REGION_CONFIG[region] || REGION_CONFIG.na;
 
