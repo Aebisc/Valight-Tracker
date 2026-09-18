@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import type { Player } from "@/lib/types";
 import { rankColor, RANK_NAMES_SHORT, rankIconUrl } from "@/lib/constants";
 
@@ -158,11 +158,16 @@ function PartyBadge({ partyNumber, partySize }: { partyNumber: number; partySize
   );
 }
 
-function Row({ p, self, i, expanded, onToggle, badges }: {
-  p: Player; self: boolean; i: number;
-  expanded: boolean; onToggle: () => void;
+interface RowProps {
+  p: Player;
+  self: boolean;
+  i: number;
+  expanded: boolean;
+  onToggle: (puuid: string) => void;
   badges?: BadgeType[];
-}) {
+}
+
+function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
   const rc = rankColor(p.rankName);
   const pc = rankColor(p.peakRankName);
   const delay = i < 10 ? `a-d${i + 1}` : "a-enter";
@@ -176,8 +181,8 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        onClick={onToggle}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+        onClick={() => onToggle(p.puuid)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(p.puuid); } }}
         style={{
           cursor: "pointer",
           userSelect: "none",
@@ -313,6 +318,61 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
     </div>
   );
 }
+
+function areRowPropsEqual(prev: RowProps, next: RowProps): boolean {
+  if (prev.expanded !== next.expanded) return false;
+  if (prev.self !== next.self) return false;
+  if (prev.i !== next.i) return false;
+  if (prev.onToggle !== next.onToggle) return false;
+
+  const prevBadges = prev.badges;
+  const nextBadges = next.badges;
+  if (prevBadges !== nextBadges) {
+    if (!prevBadges || !nextBadges) return false;
+    if (prevBadges.length !== nextBadges.length) return false;
+    for (let idx = 0; idx < prevBadges.length; idx++) {
+      if (prevBadges[idx] !== nextBadges[idx]) return false;
+    }
+  }
+
+  const p1 = prev.p;
+  const p2 = next.p;
+  if (p1 === p2) return true;
+
+  return (
+    p1.puuid === p2.puuid &&
+    p1.agentId === p2.agentId &&
+    p1.agentName === p2.agentName &&
+    p1.rank === p2.rank &&
+    p1.rankName === p2.rankName &&
+    p1.rr === p2.rr &&
+    p1.peakRank === p2.peakRank &&
+    p1.peakRankName === p2.peakRankName &&
+    p1.previousRank === p2.previousRank &&
+    p1.partyNumber === p2.partyNumber &&
+    p1.partySize === p2.partySize &&
+    p1.name === p2.name &&
+    p1.tag === p2.tag &&
+    p1.kills === p2.kills &&
+    p1.deaths === p2.deaths &&
+    p1.assists === p2.assists &&
+    p1.acs === p2.acs &&
+    p1.adr === p2.adr &&
+    p1.headshotPercent === p2.headshotPercent &&
+    p1.winrate === p2.winrate &&
+    p1.kd === p2.kd &&
+    p1.accountLevel === p2.accountLevel &&
+    p1.isCurrentActRank === p2.isCurrentActRank &&
+    p1.currentSeasonWins === p2.currentSeasonWins &&
+    p1.currentSeasonGames === p2.currentSeasonGames &&
+    p1.lastMatchKills === p2.lastMatchKills &&
+    p1.lastMatchDeaths === p2.lastMatchDeaths &&
+    p1.lastMatchAssists === p2.lastMatchAssists &&
+    p1.lastMatchKD === p2.lastMatchKD
+  );
+}
+
+const MemoizedRow = memo(Row, areRowPropsEqual);
 
 function ExpandedRow({ p }: {
   p: Player;
@@ -481,9 +541,9 @@ function StatCell({ label, val, warn }: { label: string; val: string; warn?: boo
   );
 }
 
-function Team({ label, color, players, selfPuuid, expandedPuuid, setExpanded, playerBadges }: {
+function Team({ label, color, players, selfPuuid, expandedPuuid, onToggle, playerBadges }: {
   label: string; color: string; players: Player[]; selfPuuid: string;
-  expandedPuuid: string | null; setExpanded: (id: string | null) => void;
+  expandedPuuid: string | null; onToggle: (puuid: string) => void;
   playerBadges?: Map<string, BadgeType[]>;
 }) {
   const avg = avgTeamRank(players);
@@ -506,13 +566,13 @@ function Team({ label, color, players, selfPuuid, expandedPuuid, setExpanded, pl
       }} />
       <div className="card" style={{ padding: 4 }}>
         {players.map((p, i) => (
-          <Row
+          <MemoizedRow
             key={p.puuid}
             p={p}
             self={p.puuid === selfPuuid}
             i={i}
             expanded={expandedPuuid === p.puuid}
-            onToggle={() => setExpanded(expandedPuuid === p.puuid ? null : p.puuid)}
+            onToggle={onToggle}
             badges={playerBadges?.get(p.puuid)}
           />
         ))}
@@ -521,14 +581,20 @@ function Team({ label, color, players, selfPuuid, expandedPuuid, setExpanded, pl
   );
 }
 
+const MemoizedTeam = memo(Team);
+
 export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: Props) {
   const [expandedPuuid, setExpanded] = useState<string | null>(null);
 
+  const toggleExpanded = useCallback((puuid: string) => {
+    setExpanded((prev) => (prev === puuid ? null : puuid));
+  }, []);
+
   if (isDeathmatch) {
     return (
-      <Team
+      <MemoizedTeam
         label="Players" color="var(--ink-faint)" players={players}
-        selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded}
+        selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded}
       />
     );
   }
@@ -576,8 +642,8 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="grid grid-cols-1 2xl:grid-cols-2" style={{ gap: 16 }}>
-          <Team label="Your Team" color={myColor} players={my} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />
-          <Team label="Enemy Team" color={enemyColor} players={enemy} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />
+          <MemoizedTeam label="Your Team" color={myColor} players={my} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded} playerBadges={playerBadges} />
+          <MemoizedTeam label="Enemy Team" color={enemyColor} players={enemy} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded} playerBadges={playerBadges} />
         </div>
       </div>
     );
@@ -585,8 +651,8 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {my.length > 0 && <Team label="Your Team" color={myColor} players={my} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />}
-      {enemy.length > 0 && <Team label="Enemy Team" color={enemyColor} players={enemy} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />}
+      {my.length > 0 && <MemoizedTeam label="Your Team" color={myColor} players={my} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded} playerBadges={playerBadges} />}
+      {enemy.length > 0 && <MemoizedTeam label="Enemy Team" color={enemyColor} players={enemy} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded} playerBadges={playerBadges} />}
     </div>
   );
 }
