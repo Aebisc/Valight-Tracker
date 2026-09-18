@@ -90,6 +90,7 @@ function Badge({ type }: { type: BadgeType }) {
       boxShadow: type === "mvp" ? "0 0 8px rgba(251, 191, 36, 0.2)" : "none",
       transition: "all 0.2s ease",
       whiteSpace: "nowrap",
+      flexShrink: 0,
     }}>
       {type === "tf" && (
         <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -133,6 +134,7 @@ function PartyBadge({ partyNumber, partySize }: { partyNumber: number; partySize
         color: palette.color,
         border: `1px solid ${palette.border}`,
         whiteSpace: "nowrap",
+        flexShrink: 0,
         userSelect: "none",
       }}
     >
@@ -204,8 +206,8 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
           )}
         </div>
 
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap" }}>
             {p.name && p.tag ? (
               <a
                 href={`https://tracker.gg/valorant/profile/riot/${encodeURIComponent(p.name)}%23${encodeURIComponent(p.tag)}/overview`}
@@ -213,9 +215,9 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="tracker-link"
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none", color: "inherit", transition: "color 0.2s ease" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none", color: "inherit", minWidth: 0, flexShrink: 1, overflow: "hidden" }}
               >
-                <span className="t-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+                <span className="t-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {p.name}
                 </span>
                 <svg className="tracker-link-icon" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0, flexShrink: 0, transition: "opacity 0.2s ease, transform 0.2s ease" }}>
@@ -223,23 +225,23 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
                 </svg>
               </a>
             ) : (
-              <span className="t-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+              <span className="t-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flexShrink: 1 }}>
                 {p.name || "Unknown"}
               </span>
             )}
-            {p.tag && <span className="t-label" style={{ color: "var(--ink-dim)", transition: "color 0.2s ease" }}>#{p.tag}</span>}
-            {self && <span className="you-badge" style={{ transition: "background 0.2s ease, border-color 0.2s ease" }}>you</span>}
+            {p.tag && <span className="t-label" style={{ color: "var(--ink-dim)", transition: "color 0.2s ease", flexShrink: 0, whiteSpace: "nowrap" }}>#{p.tag}</span>}
+            {self && <span className="you-badge" style={{ transition: "background 0.2s ease, border-color 0.2s ease", flexShrink: 0, whiteSpace: "nowrap" }}>you</span>}
             {badges && badges.map((b) => <Badge key={b} type={b} />)}
             {p.partyNumber && <PartyBadge partyNumber={p.partyNumber} partySize={p.partySize} />}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-            <span className="t-label">{p.agentName}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden" }}>
+            <span className="t-label" style={{ whiteSpace: "nowrap" }}>{p.agentName}</span>
             <span className="dot" />
-            <span className="t-label" style={{ fontVariantNumeric: "tabular-nums" }}>LVL {p.accountLevel}</span>
+            <span className="t-label" style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>LVL {p.accountLevel}</span>
           </div>
         </div>
 
-        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
           <img
             src={rankIconUrl(p.rank)}
             alt={p.rankName}
@@ -253,14 +255,14 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
             }}
             loading="lazy"
           />
-          <div style={{ textAlign: "right", minWidth: 60 }}>
+          <div style={{ textAlign: "right", minWidth: 60, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-              <span className="t-title" style={{ color: rc, fontSize: 13, opacity: p.rank >= 3 && !p.isCurrentActRank ? 0.55 : 1, transition: "color 0.2s ease, opacity 0.2s ease" }}>{p.rankName}</span>
+              <span className="t-title" style={{ color: rc, fontSize: 13, opacity: p.rank >= 3 && !p.isCurrentActRank ? 0.55 : 1, transition: "color 0.2s ease, opacity 0.2s ease", whiteSpace: "nowrap" }}>{p.rankName}</span>
               {p.rank >= 3 && !p.isCurrentActRank && (
-                <span className="t-micro" style={{ color: "var(--warn)", fontSize: 8, letterSpacing: "0.5px" }}>PREV</span>
+                <span className="t-micro" style={{ color: "var(--warn)", fontSize: 8, letterSpacing: "0.5px", flexShrink: 0 }}>PREV</span>
               )}
             </div>
-            <div className="t-mono" style={{ marginTop: 2 }}>{p.rr} RR</div>
+            <div className="t-mono" style={{ marginTop: 2, whiteSpace: "nowrap" }}>{p.rr} RR</div>
           </div>
         </div>
 
@@ -279,9 +281,9 @@ function Row({ p, self, i, expanded, onToggle, badges }: {
               loading="lazy"
             />
           )}
-          <div style={{ textAlign: "right", minWidth: 48 }}>
-            <div className="t-micro" style={{ color: "var(--ink-dim)" }}>Peak</div>
-            <div className="t-body" style={{ color: pc, marginTop: 2, fontSize: 11, transition: "color 0.2s ease" }}>{p.peakRankName}</div>
+          <div style={{ textAlign: "right", minWidth: 48, flexShrink: 0 }}>
+            <div className="t-micro" style={{ color: "var(--ink-dim)", whiteSpace: "nowrap" }}>Peak</div>
+            <div className="t-body" style={{ color: pc, marginTop: 2, fontSize: 11, transition: "color 0.2s ease", whiteSpace: "nowrap" }}>{p.peakRankName}</div>
           </div>
         </div>
 
@@ -466,13 +468,14 @@ function ShotBar({ label, pct, count, color }: { label: string; pct: number; cou
 
 function StatCell({ label, val, warn }: { label: string; val: string; warn?: boolean }) {
   return (
-    <div style={{ textAlign: "center", minWidth: 36 }}>
-      <div className="t-micro">{label}</div>
+    <div style={{ textAlign: "center", minWidth: 36, flexShrink: 0 }}>
+      <div className="t-micro" style={{ whiteSpace: "nowrap" }}>{label}</div>
       <div className="t-body" style={{
         fontVariantNumeric: "tabular-nums",
         marginTop: 3,
         color: warn ? "var(--up)" : undefined,
         transition: "color 0.2s ease",
+        whiteSpace: "nowrap",
       }}>{val}</div>
     </div>
   );
@@ -569,10 +572,10 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     return badges;
   }, [players]);
 
-  if (my.length === 5 && enemy.length === 5) {
+  if (my.length > 0 && enemy.length > 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div className="grid grid-cols-1 xl:grid-cols-2" style={{ gap: 16 }}>
+        <div className="grid grid-cols-1 2xl:grid-cols-2" style={{ gap: 16 }}>
           <Team label="Your Team" color={myColor} players={my} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />
           <Team label="Enemy Team" color={enemyColor} players={enemy} selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} setExpanded={setExpanded} playerBadges={playerBadges} />
         </div>

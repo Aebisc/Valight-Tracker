@@ -68,7 +68,7 @@ export default function Home() {
         </span>
       </div>
 
-      <main style={{ flex: 1, width: "100%", maxWidth: 1200, margin: "0 auto", padding: "56px 32px 56px", position: "relative", zIndex: 1 }}>
+      <main style={{ flex: 1, width: "100%", maxWidth: 1600, margin: "0 auto", padding: "56px 32px 56px", position: "relative", zIndex: 1 }}>
         {loading ? (
           <Splash>
             <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: 2, textTransform: "uppercase", marginBottom: 28, color: "var(--ink-muted)" }}>VaLight Tracker</div>
