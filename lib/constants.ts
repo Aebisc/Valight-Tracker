@@ -1,3 +1,5 @@
+import type { TeamSide } from "./types";
+
 export const RANK_MAP: Record<number, string> = {
   0: "Unranked", 1: "Unused 1", 2: "Unused 2",
   3: "Iron 1", 4: "Iron 2", 5: "Iron 3",
@@ -122,3 +124,26 @@ export const MAP_MAP: Record<string, string> = {
   "/game/maps/hurm/hurm_hightide/hurm_hightide": "Glitch",
   "/game/maps/hurm/hurm_yard/hurm_yard": "Piazza",
 };
+
+export const SIDE_MODE_KEYWORDS = new Set(["bomb", "quickbomb", "spikerush", "swiftplay"]);
+export const SIDE_QUEUES = new Set(["competitive", "unrated", "swiftplay", "spikerush"]);
+
+export function resolveStartingSide(
+  teamId: string | undefined | null,
+  queueId: string,
+  modeKeyword: string
+): TeamSide {
+  if (!teamId) return null;
+  const q = queueId.toLowerCase();
+
+  // Custom games have empty queues, so fall back to mode keyword check
+  const eligible = q
+    ? SIDE_QUEUES.has(q) || SIDE_MODE_KEYWORDS.has(modeKeyword)
+    : SIDE_MODE_KEYWORDS.has(modeKeyword);
+
+  if (!eligible) return null;
+
+  const t = teamId.toLowerCase();
+  return t === "blue" ? "defence" : t === "red" ? "attack" : null;
+}
+

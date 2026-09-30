@@ -41,6 +41,8 @@ export interface ValorantPlayer {
   partySize?: number;
 }
 
+export type TeamSide = "attack" | "defence" | null;
+
 export interface MatchInfo {
   matchId: string;
   mapId: string;
@@ -53,6 +55,7 @@ export interface MatchInfo {
   isRanked: boolean;
   gameState: string;
   seasonId: string;
+  startingSide?: TeamSide;
 }
 
 export type Player = ValorantPlayer;

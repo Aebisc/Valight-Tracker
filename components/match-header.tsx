@@ -36,7 +36,7 @@ interface MatchHeaderProps {
 
 const tagTransition = "all 0.2s ease";
 
-export default function MatchHeader({ gameState, onRefresh, refreshing, stateStartTime }: MatchHeaderProps) {
+export default function MatchHeader({ matchInfo, gameState, onRefresh, refreshing, stateStartTime }: MatchHeaderProps) {
   const live = gameState === "INGAME";
   const showTimer = gameState === "PREGAME" || gameState === "INGAME";
   const timerDisplay = useElapsedTimer(showTimer ? stateStartTime : undefined);
@@ -142,6 +142,40 @@ export default function MatchHeader({ gameState, onRefresh, refreshing, stateSta
             </span>
           )}
         </span>
+
+        {gameState === "PREGAME" && matchInfo?.startingSide && (
+          <span
+            className="tag"
+            style={{
+              borderColor: matchInfo.startingSide === "attack"
+                ? "rgba(248, 113, 113, 0.25)"
+                : "rgba(96, 165, 250, 0.25)",
+              color: matchInfo.startingSide === "attack" ? "var(--down)" : "var(--info)",
+              background: matchInfo.startingSide === "attack"
+                ? "rgba(248, 113, 113, 0.08)"
+                : "rgba(96, 165, 250, 0.08)",
+              gap: 5,
+              transition: "color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease",
+            }}
+          >
+            {matchInfo.startingSide === "attack" ? (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="22" y1="12" x2="18" y2="12" />
+                <line x1="6" y1="12" x2="2" y2="12" />
+                <line x1="12" y1="6" x2="12" y2="2" />
+                <line x1="12" y1="22" x2="12" y2="18" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            )}
+            <span>
+              {matchInfo.startingSide === "attack" ? "Attacking First" : "Defending First"}
+            </span>
+          </span>
+        )}
 
         <button
           onClick={onRefresh}

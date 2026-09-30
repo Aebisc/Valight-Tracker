@@ -13,8 +13,8 @@ import {
   getPlayerPresences,
   type PlayerPresenceInfo,
 } from "@/lib/valorant-api";
-import { RANK_MAP, AGENT_MAP, MAP_MAP, GAMEMODE_MAP, DEATHMATCH_MODES } from "@/lib/constants";
-import type { ValorantPlayer, MatchInfo, ApiConfig } from "@/lib/types";
+import { RANK_MAP, AGENT_MAP, MAP_MAP, GAMEMODE_MAP, DEATHMATCH_MODES, resolveStartingSide } from "@/lib/constants";
+import type { ValorantPlayer, MatchInfo, ApiConfig, TeamSide } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -463,7 +463,7 @@ export async function GET(request: Request) {
 
     // Fast-path: if already INGAME and we have cached data for this match,
     // return immediately! No additional API calls needed (no pregame check, no presence check).
-    if (coreGameMatchId && matchCache && matchCache.matchId === coreGameMatchId) {
+    if (coreGameMatchId && matchCache && matchCache.matchId === coreGameMatchId && matchCache.gameState === "INGAME") {
       return Response.json({
         gameState: matchCache.gameState,
         match: matchCache.matchInfo,
@@ -501,6 +501,7 @@ export async function GET(request: Request) {
     let resolvedMatchId = "";
     let seasonId = "";
     let resolvedGameState: "PREGAME" | "INGAME" = "PREGAME";
+    let allyTeamId: string | null = null;
 
     if (coreGameMatchId) {
       resolvedGameState = "INGAME";
@@ -523,13 +524,16 @@ export async function GET(request: Request) {
       isRanked = preGame?.IsRanked ?? gameModeId === "competitive";
       seasonId = preGame?.SeasonID ?? "";
 
+      allyTeamId = preGame?.AllyTeam?.TeamID ?? null;
+      const enemyTeamId = preGame?.EnemyTeam?.TeamID ?? (allyTeamId === "Blue" ? "Red" : allyTeamId === "Red" ? "Blue" : null);
+
       const allyPlayers = (preGame?.AllyTeam?.Players ?? []).map((p: any) => ({
         ...p,
-        TeamID: p?.TeamID ?? "Blue",
+        TeamID: p?.TeamID ?? allyTeamId ?? "Blue",
       }));
       const enemyPlayers = (preGame?.EnemyTeam?.Players ?? []).map((p: any) => ({
         ...p,
-        TeamID: p?.TeamID ?? "Red",
+        TeamID: p?.TeamID ?? enemyTeamId ?? "Red",
       }));
       players = [...allyPlayers, ...enemyPlayers];
     }
@@ -538,11 +542,11 @@ export async function GET(request: Request) {
       .map((p: any) => p?.Subject ?? p?.PlayerIdentity?.Subject ?? "")
       .filter(Boolean);
 
-    if (matchCache && matchCache.matchId !== resolvedMatchId) {
+    if (matchCache && (matchCache.matchId !== resolvedMatchId || matchCache.gameState !== resolvedGameState)) {
       matchCache = null;
     }
 
-    if (matchCache && matchCache.matchId === resolvedMatchId) {
+    if (matchCache && matchCache.matchId === resolvedMatchId && matchCache.gameState === resolvedGameState) {
       if (resolvedGameState === "PREGAME") {
         for (const p of matchCache.players) {
           const fresh = players.find((fp: any) => (fp?.Subject ?? fp?.PlayerIdentity?.Subject) === p.puuid);
@@ -680,6 +684,10 @@ export async function GET(request: Request) {
     }
     const isDeathmatch = DEATHMATCH_MODES.has(queueLower) || DEATHMATCH_MODES.has(modeKeyword);
 
+    const startingSide: TeamSide = resolvedGameState === "PREGAME"
+      ? resolveStartingSide(allyTeamId, gameModeId, modeKeyword)
+      : null;
+
     const matchInfo: MatchInfo = {
       matchId: resolvedMatchId,
       mapId,
@@ -692,6 +700,7 @@ export async function GET(request: Request) {
       isRanked,
       gameState: resolvedGameState,
       seasonId,
+      startingSide,
     };
 
     // Fill in partyId for players whose presence was unavailable (non-friends
