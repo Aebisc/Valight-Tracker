@@ -42,6 +42,7 @@ pub struct ValorantPlayer {
     pub last_match_kills: u32,
     pub last_match_deaths: u32,
     pub last_match_assists: u32,
+    #[serde(rename = "lastMatchKD")]
     pub last_match_kd: f64,
     /// Up to 5 most recent competitive match outcomes, newest first.
     pub recent_results: Vec<MatchResult>,

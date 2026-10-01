@@ -33,6 +33,7 @@ export interface ValorantPlayer {
   lastMatchDeaths: number;
   lastMatchAssists: number;
   lastMatchKD: number;
+  lastMatchKd?: number;
   /** Up to 5 most recent competitive match outcomes, newest first. */
   recentResults: ("W" | "L" | "D")[];
   partyId?: string;

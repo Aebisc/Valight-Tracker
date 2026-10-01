@@ -373,7 +373,7 @@ function areRowPropsEqual(prev: RowProps, next: RowProps): boolean {
     p1.lastMatchKills === p2.lastMatchKills &&
     p1.lastMatchDeaths === p2.lastMatchDeaths &&
     p1.lastMatchAssists === p2.lastMatchAssists &&
-    p1.lastMatchKD === p2.lastMatchKD
+    (p1.lastMatchKD === p2.lastMatchKD || p1.lastMatchKd === p2.lastMatchKd)
   );
 }
 
@@ -386,6 +386,7 @@ function ExpandedRow({ p }: {
   const hsPct = totalShots > 0 ? (p.headshots / totalShots * 100) : 0;
   const bsPct = totalShots > 0 ? (p.bodyshots / totalShots * 100) : 0;
   const lsPct = totalShots > 0 ? (p.legshots / totalShots * 100) : 0;
+  const lastKd = p.lastMatchKD ?? p.lastMatchKd ?? 0;
 
   const detailRowStyle: React.CSSProperties = {
     display: "flex",
@@ -411,8 +412,8 @@ function ExpandedRow({ p }: {
             </div>
             <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0 }} />
             <div>
-              <div className="t-title" style={{ fontSize: 16, color: p.lastMatchKD >= 1 ? "var(--up)" : "var(--down)", fontVariantNumeric: "tabular-nums", transition: "color 0.2s ease" }}>
-                {p.lastMatchKD > 0 ? p.lastMatchKD.toFixed(2) : "-"}
+              <div className="t-title" style={{ fontSize: 16, color: lastKd >= 1 ? "var(--up)" : "var(--down)", fontVariantNumeric: "tabular-nums", transition: "color 0.2s ease" }}>
+                {lastKd > 0 ? lastKd.toFixed(2) : (p.lastMatchDeaths > 0 ? "0.00" : "-")}
               </div>
               <div className="t-micro" style={{ color: "var(--ink-dim)", marginTop: 3 }}>K/D</div>
             </div>
