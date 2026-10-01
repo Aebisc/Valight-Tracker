@@ -11,6 +11,7 @@ use super::player::{round1, round2, round_pct};
 
 // ─── extractPlayerStats ───────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub struct PlayerStats {
     pub kills: u32,
     pub deaths: u32,
@@ -160,6 +161,7 @@ pub fn get_match_result(match_detail: &Value, puuid: &str) -> MatchResult {
 
 // ─── aggregatePlayerStats ─────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub struct AggregatedStats {
     pub kills: f64,
     pub deaths: f64,

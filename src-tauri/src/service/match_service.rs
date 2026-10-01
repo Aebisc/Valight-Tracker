@@ -236,7 +236,10 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
             None,
         )
     } else {
-        let mid = pre_match_id.as_ref().unwrap();
+        let mid = match pre_match_id.as_ref() {
+            Some(m) => m,
+            None => return ApiResponse::menus(cfg.puuid.clone()),
+        };
         let pg = match endpoints::get_pregame_match(&state.remote_client, &cfg, mid).await {
             Some(v) => v,
             None => return ApiResponse::error("Failed to fetch pregame match".to_string()),
@@ -334,22 +337,24 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
         .filter_map(|n| n["Subject"].as_str().map(|s| (s.to_string(), n.clone())))
         .collect();
 
-    // Concurrent MMR + comp updates per player
+    // Concurrent MMR + comp updates per player (mapped by PUUID to preserve order)
     let remote_client = state.remote_client.clone();
     let cfg_clone = cfg.clone();
-    let mmr_comp_results: Vec<(Option<Value>, Option<Value>)> = stream::iter(puuids.clone())
+    let mmr_comp_results: HashMap<String, (Option<Value>, Option<Value>)> = stream::iter(puuids.clone())
         .map(move |puuid| {
             let remote = remote_client.clone();
             let cfg_ref = cfg_clone.clone();
             async move {
                 let mmr = endpoints::get_player_mmr(&remote, &cfg_ref, &puuid).await;
                 let comp = endpoints::get_competitive_updates(&remote, &cfg_ref, &puuid, RECENT_GAMES_COUNT).await;
-                (mmr, comp)
+                (puuid, (mmr, comp))
             }
         })
         .buffer_unordered(DETAIL_CONCURRENCY)
-        .collect()
-        .await;
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect();
 
     // Build intermediate player data and collect recent match IDs
     struct RawPlayer {
@@ -358,9 +363,15 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
     }
 
     let mut raw_built: Vec<RawPlayer> = Vec::new();
-    for (i, puuid) in puuids.iter().enumerate() {
-        let p = match raw_players.get(i) { Some(v) => v, None => continue };
-        let (mmr_raw, comp_raw) = match mmr_comp_results.get(i) { Some(v) => v, None => continue };
+    for p in &raw_players {
+        let puuid = match p["Subject"].as_str().or_else(|| p["PlayerIdentity"]["Subject"].as_str()) {
+            Some(s) if !s.is_empty() => s,
+            _ => continue,
+        };
+        let (mmr_raw, comp_raw) = match mmr_comp_results.get(puuid) {
+            Some(v) => v,
+            None => continue,
+        };
 
         let mmr_data = mmr_raw.as_ref()
             .filter(|v| v["httpStatus"].is_null() || v["httpStatus"].as_u64().unwrap_or(0) < 400);
@@ -435,7 +446,7 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
             .unwrap_or("")
             .to_string();
         let identity = &p["PlayerIdentity"];
-        let name_entry = name_map.get(puuid.as_str());
+        let name_entry = name_map.get(puuid);
         let display_name = name_entry
             .and_then(|n| n["GameName"].as_str().or_else(|| n["DisplayName"].as_str()))
             .unwrap_or("")
@@ -446,7 +457,7 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
 
         raw_built.push(RawPlayer {
             built: ValorantPlayer {
-                puuid: puuid.clone(),
+                puuid: puuid.to_string(),
                 name: display_name,
                 tag: tag_line,
                 agent_id: agent_id.clone(),
@@ -512,11 +523,18 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
         }
     }
 
-    // 10. Build final players with stats
-    let built_players: Vec<ValorantPlayer> = {
+    // 10. Build final players with stats & collect detail lookup for party enrichment
+    let (built_players, detail_lookup): (Vec<ValorantPlayer>, HashMap<String, Value>) = {
         let detail_cache = state.detail_cache.lock().await;
         let mut result = Vec::new();
+        let mut lookup = HashMap::new();
         for rp in raw_built {
+            for mid in &rp.recent_match_ids {
+                if let Some(d) = detail_cache.peek(mid) {
+                    lookup.insert(mid.clone(), (**d).clone());
+                }
+            }
+
             let details: Vec<Arc<Value>> = rp.recent_match_ids.iter()
                 .filter_map(|mid| detail_cache.peek(mid).cloned())
                 .collect();
@@ -551,63 +569,43 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
 
             result.push(player);
         }
-        result
+        (result, lookup)
     };
 
     // 11. Party enrichment + assignment
-    let detail_lookup: HashMap<String, Value> = {
-        let detail_cache = state.detail_cache.lock().await;
-        // Export only the entries referenced by this lobby's players
-        let mut map = HashMap::new();
-        for mid in raw_built_ids(&built_players, &state) {
-            if let Some(d) = detail_cache.peek(&mid) {
-                map.insert(mid, (**d).clone());
-            }
-        }
-        map
-    };
-
     let mut players_with_party = built_players;
     party::enrich_party_from_match_history(&mut players_with_party, &detail_lookup);
     party::assign_party_numbers(&mut players_with_party, &presences);
 
-    // 12. Resolve map / mode / side
-    let map_name = resolve_map_name(&map_id);
-    let (game_mode_name, is_deathmatch, mode_keyword) =
-        resolve_game_mode_name(&game_mode_id, &game_mode, is_ranked);
+     // 12. Resolve map / mode / side
+     let map_name = resolve_map_name(&map_id);
+     let (game_mode_name, is_deathmatch, mode_keyword) =
+         resolve_game_mode_name(&game_mode_id, &game_mode, is_ranked);
 
-    let starting_side = if resolved_game_state == "PREGAME" {
-        side::resolve_starting_side(ally_team_id.as_deref(), &game_mode_id, &mode_keyword)
-    } else { None };
+     let starting_side = if resolved_game_state == "PREGAME" {
+         side::resolve_starting_side(ally_team_id.as_deref(), &game_mode_id, &mode_keyword)
+     } else { None };
 
-    let match_info = MatchInfo {
-        match_id: resolved_match_id.clone(),
-        map_id, map_name, game_mode, game_mode_id, game_mode_name, is_deathmatch,
-        server, is_ranked, game_state: resolved_game_state.clone(), season_id,
-        starting_side,
-    };
+     let match_info = MatchInfo {
+         match_id: resolved_match_id.clone(),
+         map_id, map_name, game_mode, game_mode_id, game_mode_name, is_deathmatch,
+         server, is_ranked, game_state: resolved_game_state.clone(), season_id,
+         starting_side,
+     };
 
-    // 13. Store in match cache
-    *state.match_cache.lock().await = Some(MatchCache {
-        match_id: resolved_match_id,
-        game_state: resolved_game_state.clone(),
-        players: players_with_party.clone(),
-        match_info: match_info.clone(),
-    });
+     // 13. Store in match cache
+     *state.match_cache.lock().await = Some(MatchCache {
+         match_id: resolved_match_id,
+         game_state: resolved_game_state.clone(),
+         players: players_with_party.clone(),
+         match_info: match_info.clone(),
+     });
 
-    ApiResponse {
-        game_state: resolved_game_state,
-        r#match: Some(match_info),
-        players: Some(players_with_party),
-        self_puuid: Some(cfg.puuid),
-        error: None,
-    }
-}
-
-// Helper: collect all recent match IDs referenced by the current lobby's players
-// (needed to export relevant entries from the LRU for party enrichment)
-fn raw_built_ids(_players: &[ValorantPlayer], _state: &AppState) -> Vec<String> {
-    // Phase 3 TODO: store _recentMatchIds temporarily during build
-    // For now returns empty — enrichPartyFromMatchHistory will use whatever's in the LRU
-    vec![]
-}
+     ApiResponse {
+         game_state: resolved_game_state,
+         r#match: Some(match_info),
+         players: Some(players_with_party),
+         self_puuid: Some(cfg.puuid),
+         error: None,
+     }
+ }

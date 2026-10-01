@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri as coreIsTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ApiResponse } from "./types";
 
@@ -6,7 +6,9 @@ import type { ApiResponse } from "./types";
  * Checks if running inside a Tauri environment.
  */
 export function isTauri(): boolean {
-  return typeof window !== "undefined" && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+  if (typeof window === "undefined") return false;
+  const w = window as unknown as Record<string, unknown>;
+  return coreIsTauri() || Boolean(w.__TAURI_INTERNALS__) || Boolean(w.__TAURI__);
 }
 
 /**

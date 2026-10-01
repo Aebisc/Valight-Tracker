@@ -82,8 +82,6 @@ pub async fn read_lockfile() -> Result<Lockfile, LockfileError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn parses_standard_lockfile() {
         // Simulate parsing with a known lockfile string

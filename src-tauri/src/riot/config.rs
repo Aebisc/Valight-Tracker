@@ -36,6 +36,7 @@ fn region_config(region: &str) -> &'static RegionEndpoints {
 // ─── ApiConfig ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ApiConfig {
     pub pd_url: String,
     pub glz_url: String,
@@ -100,7 +101,7 @@ async fn extract_log_metadata() -> (String, String) {
     let mut total_read = 0usize;
     let mut buf = vec![0u8; chunk_size];
 
-    let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.\1\.a\.pvp\.net").unwrap();
+    let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
     let ver_re = regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap();
 
     loop {
@@ -115,7 +116,9 @@ async fn extract_log_metadata() -> (String, String) {
 
         if region == "na" {
             if let Some(cap) = glz_re.captures(&accumulated) {
-                region = cap[1].to_string();
+                if cap[1] == cap[2] {
+                    region = cap[1].to_string();
+                }
             }
         }
         if version == "unknown" {
@@ -185,22 +188,18 @@ pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfi
     let rc = region_config(&region);
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", access_token)).unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_static("x-riot-entitlements-jwt"),
-        HeaderValue::from_str(&entitlements_token).unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_static("x-riot-clientversion"),
-        HeaderValue::from_str(&format!("release-{}", version)).unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_static("x-riot-clientplatform"),
-        HeaderValue::from_str(&client_platform_header()).unwrap(),
-    );
+    if let Ok(val) = HeaderValue::from_str(&format!("Bearer {}", access_token.trim())) {
+        headers.insert(reqwest::header::AUTHORIZATION, val);
+    }
+    if let Ok(val) = HeaderValue::from_str(entitlements_token.trim()) {
+        headers.insert(HeaderName::from_static("x-riot-entitlements-jwt"), val);
+    }
+    if let Ok(val) = HeaderValue::from_str(&format!("release-{}", version.trim())) {
+        headers.insert(HeaderName::from_static("x-riot-clientversion"), val);
+    }
+    if let Ok(val) = HeaderValue::from_str(&client_platform_header()) {
+        headers.insert(HeaderName::from_static("x-riot-clientplatform"), val);
+    }
 
     let config = ApiConfig {
         pd_url: rc.pd.to_string(),
@@ -219,4 +218,22 @@ pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfi
 
     tracing::info!("ApiConfig loaded: region={} version={} puuid={}...", region, version, &puuid[..8.min(puuid.len())]);
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_regex_compilation() {
+        let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
+        let ver_re = regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap();
+
+        let sample_line = "LogNet: Browse: https://glz-eu-1.eu.a.pvp.net/sessions";
+        let cap = glz_re.captures(sample_line).unwrap();
+        assert_eq!(&cap[1], "eu");
+        assert_eq!(&cap[2], "eu");
+
+        let sample_ver = "CI server version: release-09.08-shipping-17-2917751";
+        let cap_ver = ver_re.captures(sample_ver).unwrap();
+        assert_eq!(&cap_ver[1], "09.08-shipping-17-2917751");
+    }
 }
