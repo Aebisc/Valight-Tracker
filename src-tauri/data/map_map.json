@@ -1,0 +1,19 @@
+{
+  "/game/maps/ascent/ascent": "Ascent",
+  "/game/maps/bonsai/bonsai": "Split",
+  "/game/maps/canyon/canyon": "Fracture",
+  "/game/maps/duality/duality": "Bind",
+  "/game/maps/foxtrot/foxtrot": "Breeze",
+  "/game/maps/infinity/infinity": "Abyss",
+  "/game/maps/jam/jam": "Lotus",
+  "/game/maps/juliett/juliett": "Sunset",
+  "/game/maps/pitt/pitt": "Pearl",
+  "/game/maps/port/port": "Icebox",
+  "/game/maps/triad/triad": "Haven",
+  "/game/maps/rook/rook": "Corrode",
+  "/game/maps/hurm/hurm_alley/hurm_alley": "District",
+  "/game/maps/hurm/hurm_bowl/hurm_bowl": "Kasbah",
+  "/game/maps/hurm/hurm_helix/hurm_helix": "Drift",
+  "/game/maps/hurm/hurm_hightide/hurm_hightide": "Glitch",
+  "/game/maps/hurm/hurm_yard/hurm_yard": "Piazza"
+}

@@ -42,3 +42,6 @@ latest.json
 *.sig
 *.key
 
+# test fixtures — raw/ has live Riot tokens, NEVER commit
+src-tauri/fixtures/raw/
+

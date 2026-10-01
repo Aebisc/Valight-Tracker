@@ -12,9 +12,26 @@ tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["time"] }
+
+# Async runtime — full feature set for the backend (time, fs, sync, macros, io)
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs", "macros", "io-util"] }
+futures = "0.3"
+
+# HTTP — rustls so no OpenSSL dep; danger_accept_invalid_certs for loopback
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# Utilities
+base64 = "0.22"
+regex = "1"
+lru = "0.12"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+once_cell = "1"
 
 [[bin]]
 name = "valorant-tracker"
@@ -26,4 +43,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+wiremock = "0.6"
+insta = { version = "1", features = ["json"] }
 

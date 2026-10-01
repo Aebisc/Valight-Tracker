@@ -1,20 +1,34 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// ─── New Rust backend modules (Phase 1–3) ─────────────────────────────────────
+// These are compiled and tested but not yet wired into the Tauri window.
+// Phase 4 will flip the window from WebviewUrl::External to a static export
+// and replace the sidecar with these commands.
+mod model;
+mod state;
+mod commands;
+mod riot {
+    pub mod lockfile;
+    pub mod config;
+    pub mod client;
+    pub mod endpoints;
+}
+mod service {
+    pub mod player;
+    pub mod stats;
+    pub mod party;
+    pub mod side;
+    pub mod match_service;
+}
+
+// ─── Existing sidecar infrastructure (Phase A — still active) ─────────────────
 // Path A: the entire Next.js app (API route, polling, everything) runs completely
 // unchanged as a bundled Node.js "sidecar" process. This file's only job is to:
 //   1. Start that sidecar on app launch.
-//   2. Wait until it's actually accepting connections (avoids a flash of
-//      "can't reach this page" while Node is still booting).
+//   2. Wait until it's actually accepting connections.
 //   3. Open a native window pointed at it.
-//   4. Kill the sidecar when the window closes, so it never lingers in the
-//      background after the app quits.
-//
-// NOTE: this was written and reasoned through carefully, but could not be
-// compiled/tested here (no Rust/Cargo/Windows available in this environment).
-// Treat it as a strong first draft — run `cargo check` locally and diff
-// against whatever the installed `tauri` / `tauri-plugin-shell` version's
-// docs say if anything fails to compile; the shell-plugin API has shifted
-// slightly across Tauri 2.x minor versions.
+//   4. Kill the sidecar when the window closes.
+
 
 use std::net::TcpStream;
 use std::sync::Mutex;
