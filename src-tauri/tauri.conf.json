@@ -4,12 +4,25 @@
   "version": "1.2.0",
   "identifier": "com.aebisc.valoranttracker",
   "build": {
-    "frontendDist": "dist-placeholder"
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../out"
   },
   "app": {
-    "windows": [],
+    "windows": [
+      {
+        "title": "VaLight Tracker",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 820,
+        "minHeight": 560,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' data: https://media.valorant-api.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
     }
   },
   "bundle": {
@@ -21,8 +34,6 @@
       "icons/128x128.png",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/server"],
-    "resources": ["resources/server/**/*"],
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

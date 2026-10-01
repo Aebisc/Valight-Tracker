@@ -3,7 +3,7 @@ import { resolve } from "path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  output: "export",
   turbopack: {
     root: resolve(__dirname),
   },
