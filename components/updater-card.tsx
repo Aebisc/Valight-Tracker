@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { check, type Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { isTauri } from "@/lib/backend";
 
 type UpdateStatus = "idle" | "available" | "downloading" | "installing" | "error";
 
@@ -8,7 +11,6 @@ interface AppUpdate {
   currentVersion: string;
   version: string;
   body: string;
-  url: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -26,32 +28,35 @@ export default function UpdaterCard() {
   const [totalBytes, setTotalBytes] = useState(0);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const updateResourceRef = useRef<Update | null>(null);
 
   const checkForUpdate = useCallback(async () => {
-    try {
-      const res = await fetch("/api/update", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
+    // In browser/dev outside Tauri,updater plugin won't be available
+    if (!isTauri()) {
+      return;
+    }
 
-      if (data.available && data.version && data.url) {
+    try {
+      const updateResult = await check();
+      if (updateResult) {
+        updateResourceRef.current = updateResult;
         setUpdate({
-          currentVersion: data.currentVersion,
-          version: data.version,
-          body: data.notes || "Bug fixes and performance improvements.",
-          url: data.url,
+          currentVersion: updateResult.currentVersion,
+          version: updateResult.version,
+          body: updateResult.body || "Bug fixes and performance improvements.",
         });
         setStatus("available");
       }
     } catch (err) {
-      console.warn("Silent update check could not reach release endpoint:", err);
+      console.warn("[updater] Silent update check error:", err);
     }
   }, []);
 
   useEffect(() => {
-    // Delay check slightly to let main window and sidecar complete startup
+    // Delay check slightly to let window complete initialization
     const timer = setTimeout(() => {
       checkForUpdate();
-    }, 2000);
+    }, 2500);
 
     // Periodically re-check every 30 minutes
     const interval = setInterval(checkForUpdate, 30 * 60 * 1000);
@@ -63,58 +68,35 @@ export default function UpdaterCard() {
   }, [checkForUpdate]);
 
   const handleUpdate = async () => {
-    if (!update?.url) return;
+    const updateHandler = updateResourceRef.current;
+    if (!updateHandler) return;
 
     setStatus("downloading");
     setErrorMessage(null);
     setDownloadedBytes(0);
     setTotalBytes(0);
 
+    let downloadedAcc = 0;
+
     try {
-      const response = await fetch("/api/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: update.url }),
+      await updateHandler.downloadAndInstall((event: DownloadEvent) => {
+        if (event.event === "Started") {
+          const total = event.data.contentLength ?? 0;
+          setTotalBytes(total);
+        } else if (event.event === "Progress") {
+          downloadedAcc += event.data.chunkLength;
+          setDownloadedBytes(downloadedAcc);
+        } else if (event.event === "Finished") {
+          setStatus("installing");
+        }
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error(`Download failed with status ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          try {
-            const payload = JSON.parse(trimmed.replace(/^data:\s*/, ""));
-            if (payload.event === "Started") {
-              setTotalBytes(payload.total || 0);
-            } else if (payload.event === "Progress") {
-              setDownloadedBytes(payload.downloaded || 0);
-              if (payload.total) setTotalBytes(payload.total);
-            } else if (payload.event === "Finished") {
-              setStatus("installing");
-            } else if (payload.event === "Error") {
-              throw new Error(payload.message || "Error during update download");
-            }
-          } catch {
-            // Ignore parse errors on partial stream chunks
-          }
-        }
-      }
-    } catch (err: any) {
-      console.error("Update failed:", err);
+      setStatus("installing");
+      // On Windows, the installer takes over and may close or restart.
+      // Call relaunch() to ensure restart happens smoothly across platforms.
+      await relaunch();
+    } catch (err: unknown) {
+      console.error("[updater] Update download/install error:", err);
       setStatus("error");
       setErrorMessage(
         err instanceof Error ? err.message : "Failed to download and install the update."
