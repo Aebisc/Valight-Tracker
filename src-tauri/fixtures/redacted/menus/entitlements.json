@@ -1,0 +1,7 @@
+{
+  "accessToken": "fake-access-token",
+  "entitlements": [],
+  "issuer": "https://entitlements.auth.riotgames.com",
+  "subject": "aaaaaaaa-0001-0000-0000-000000000000",
+  "token": "fake-access-token"
+}

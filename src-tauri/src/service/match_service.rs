@@ -335,13 +335,15 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
         .collect();
 
     // Concurrent MMR + comp updates per player
-    let mmr_comp_results: Vec<(Option<Value>, Option<Value>)> = stream::iter(puuids.iter())
-        .map(|puuid| {
-            let remote = &state.remote_client;
-            let cfg_ref = &cfg;
+    let remote_client = state.remote_client.clone();
+    let cfg_clone = cfg.clone();
+    let mmr_comp_results: Vec<(Option<Value>, Option<Value>)> = stream::iter(puuids.clone())
+        .map(move |puuid| {
+            let remote = remote_client.clone();
+            let cfg_ref = cfg_clone.clone();
             async move {
-                let mmr = endpoints::get_player_mmr(remote, cfg_ref, puuid).await;
-                let comp = endpoints::get_competitive_updates(remote, cfg_ref, puuid, RECENT_GAMES_COUNT).await;
+                let mmr = endpoints::get_player_mmr(&remote, &cfg_ref, &puuid).await;
+                let comp = endpoints::get_competitive_updates(&remote, &cfg_ref, &puuid, RECENT_GAMES_COUNT).await;
                 (mmr, comp)
             }
         })
@@ -485,12 +487,14 @@ pub async fn get_match(force: bool, state: &AppState) -> ApiResponse {
         }
     }
 
-    let fetched_details: Vec<(String, Option<Value>)> = stream::iter(needed_ids.iter().cloned())
-        .map(|mid| {
-            let remote = &state.remote_client;
-            let cfg_ref = &cfg;
+    let remote_client2 = state.remote_client.clone();
+    let cfg_clone2 = cfg.clone();
+    let fetched_details: Vec<(String, Option<Value>)> = stream::iter(needed_ids.into_iter())
+        .map(move |mid| {
+            let remote = remote_client2.clone();
+            let cfg_ref = cfg_clone2.clone();
             async move {
-                let detail = endpoints::get_match_details(remote, cfg_ref, &mid).await;
+                let detail = endpoints::get_match_details(&remote, &cfg_ref, &mid).await;
                 (mid, detail)
             }
         })

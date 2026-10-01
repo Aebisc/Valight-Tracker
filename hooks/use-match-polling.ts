@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useToast } from "../components/toast";
+import { fetchMatchData } from "@/lib/backend";
 import type { Player, MatchInfo, ApiResponse } from "@/lib/types";
 
 const POLL_INTERVALS: Record<string, number> = {
@@ -60,8 +61,7 @@ export function useMatchPolling(): MatchPollingResult {
   const fetchMatch = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      const res = await fetch(manual ? "/api/match?force=1" : "/api/match");
-      const data: ApiResponse = await res.json();
+      const data: ApiResponse = await fetchMatchData(manual);
       setError(data.error ?? "");
       setGameState(data.gameState);
       setMatchInfo(data.match ?? null);

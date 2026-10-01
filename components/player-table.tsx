@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import type { Player } from "@/lib/types";
 import { rankColor, RANK_NAMES_SHORT, rankIconUrl } from "@/lib/constants";
+import { openExternalUrl } from "@/lib/backend";
 
 
 interface Props {
@@ -218,7 +219,11 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
                 href={`https://tracker.gg/valorant/profile/riot/${encodeURIComponent(p.name)}%23${encodeURIComponent(p.tag)}/overview`}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openExternalUrl(`https://tracker.gg/valorant/profile/riot/${encodeURIComponent(p.name)}%23${encodeURIComponent(p.tag)}/overview`);
+                }}
                 className="tracker-link"
                 style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none", color: "inherit", minWidth: 0, flexShrink: 1, overflow: "hidden" }}
               >

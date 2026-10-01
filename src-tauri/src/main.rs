@@ -55,12 +55,18 @@ fn stop_server(state: tauri::State<SidecarHandle>) {
 }
 
 fn main() {
+    let local_client = riot::client::build_local_client();
+    let remote_client = riot::client::build_remote_client();
+    let app_state = state::AppState::new(local_client, remote_client);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SidecarHandle(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![stop_server])
+        .manage(app_state)
+        .invoke_handler(tauri::generate_handler![stop_server, commands::get_match])
         .setup(|app| {
             // If an orphaned sidecar from an earlier run or a killed dev terminal session
             // is still running on SERVER_PORT, terminate it before spawning a new one.

@@ -1,4 +1,7 @@
+"use client";
+
 import packageJson from "@/package.json";
+import { openExternalUrl } from "@/lib/backend";
 
 const appVersion = `v${packageJson.version}`;
 
@@ -16,9 +19,13 @@ export default function StatusBar() {
           <div className="status-bar-credits">
             <span className="t-label">
               <a
-                href="https://github.com/Aebisc/Light-Valorant-Tracker"
+                href="https://github.com/Aebisc/Valight-Tracker"
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openExternalUrl("https://github.com/Aebisc/Valight-Tracker");
+                }}
                 className="footer-link"
               >
                 Aebisc
