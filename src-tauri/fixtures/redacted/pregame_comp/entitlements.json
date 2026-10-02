@@ -1,7 +1,7 @@
 {
-  "accessToken": "fake-access-token",
+  "accessToken": "fake-jwt-token",
   "entitlements": [],
   "issuer": "https://entitlements.auth.riotgames.com",
   "subject": "aaaaaaaa-0014-0000-0000-000000000000",
-  "token": "fake-access-token"
+  "token": "fake-jwt-token"
 }

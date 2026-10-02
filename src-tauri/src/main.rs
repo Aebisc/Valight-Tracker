@@ -1,31 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod model;
-mod state;
-mod commands;
-mod riot {
-    pub mod lockfile;
-    pub mod config;
-    pub mod client;
-    pub mod endpoints;
-}
-mod service {
-    pub mod player;
-    pub mod stats;
-    pub mod party;
-    pub mod side;
-    pub mod match_service;
-}
+use valorant_tracker::{commands, riot, state};
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         eprintln!("PANIC: {}", info);
-        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-            let log_dir = std::path::PathBuf::from(appdata).join("VaLight-Tracker");
+        if let Ok(appdata) = riot::lockfile::local_app_data() {
+            let log_dir = appdata.join("VaLight-Tracker");
             let _ = std::fs::create_dir_all(&log_dir);
             let log_file = log_dir.join("crash.log");
             let _ = std::fs::write(log_file, format!("PANIC: {}\n", info));
         }
+
     }));
 
     let _ = tracing_subscriber::fmt()

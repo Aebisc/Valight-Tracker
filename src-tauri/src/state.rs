@@ -23,6 +23,8 @@ pub struct MatchCache {
     pub match_info: MatchInfo,
 }
 
+use crate::riot::config::RiotEndpoints;
+
 pub struct AppState {
     /// Self-signed cert OK — only used for 127.0.0.1 Riot local client.
     pub local_client: Client,
@@ -36,10 +38,20 @@ pub struct AppState {
     /// Single-flight lock: prevents two concurrent get_match calls from
     /// both rebuilding simultaneously (replaces Node's implicit serialisation).
     pub build_lock: Mutex<()>,
+    /// Optional endpoint override for integration tests / mock server
+    pub endpoints_override: Option<RiotEndpoints>,
 }
 
 impl AppState {
     pub fn new(local_client: Client, remote_client: Client) -> Self {
+        Self::new_with_override(local_client, remote_client, None)
+    }
+
+    pub fn new_with_override(
+        local_client: Client,
+        remote_client: Client,
+        endpoints_override: Option<RiotEndpoints>,
+    ) -> Self {
         Self {
             local_client,
             remote_client,
@@ -48,6 +60,7 @@ impl AppState {
                 NonZeroUsize::new(MATCH_DETAIL_CACHE_SIZE).unwrap(),
             )),
             build_lock: Mutex::new(()),
+            endpoints_override,
         }
     }
 }

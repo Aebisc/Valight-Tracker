@@ -30,40 +30,61 @@ pub fn assign_party_numbers(
         }
     }
 
-    // Group by team
-    let teams: std::collections::HashSet<String> = players.iter().map(|p| p.team_id.clone()).collect();
-    for team in teams {
+    // Group by team preserving lobby order
+    let mut team_order: Vec<String> = Vec::new();
+    let mut team_map: HashMap<String, Vec<usize>> = HashMap::new();
+    for (idx, p) in players.iter().enumerate() {
+        let team_key = if p.team_id.is_empty() { "default".to_string() } else { p.team_id.clone() };
+        if !team_map.contains_key(&team_key) {
+            team_order.push(team_key.clone());
+        }
+        team_map.entry(team_key).or_default().push(idx);
+    }
+
+    for team_key in team_order {
+        let indices = match team_map.get(&team_key) {
+            Some(idxs) => idxs,
+            None => continue,
+        };
+
         // Count how many players on this team share each partyId
         let mut party_counts: HashMap<String, u32> = HashMap::new();
-        for p in players.iter().filter(|p| p.team_id == team) {
-            if let Some(pid) = &p.party_id {
+        for &idx in indices {
+            if let Some(pid) = &players[idx].party_id {
                 if !pid.is_empty() {
                     *party_counts.entry(pid.clone()).or_insert(0) += 1;
                 }
             }
         }
 
-        // Assign numbers to parties with ≥2 members
+        let valid_parties: std::collections::HashSet<String> = party_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .map(|(pid, _)| pid)
+            .collect();
+
+        // Assign numbers in lobby order (D2)
         let mut party_number_map: HashMap<String, u32> = HashMap::new();
         let mut next_number = 1u32;
-        // Stable ordering: sort party IDs so the numbering is deterministic
-        let mut sorted_ids: Vec<&String> = party_counts.keys().collect();
-        sorted_ids.sort();
-        for pid in sorted_ids {
-            if party_counts[pid] >= 2 {
-                party_number_map.insert(pid.clone(), next_number);
-                next_number += 1;
-            }
-        }
 
-        for player in players.iter_mut().filter(|p| p.team_id == team) {
-            if let Some(pid) = &player.party_id {
-                if let Some(&num) = party_number_map.get(pid) {
-                    player.party_number = Some(num);
-                    player.party_size = party_counts.get(pid).copied();
+        for &idx in indices {
+            let pid_opt = players[idx].party_id.clone();
+            if let Some(pid) = pid_opt {
+                if valid_parties.contains(&pid) {
+                    let num = *party_number_map.entry(pid).or_insert_with(|| {
+                        let n = next_number;
+                        next_number += 1;
+                        n
+                    });
+                    players[idx].party_number = Some(num);
+                    // D3: party_size is NOT overwritten by party_counts
                 } else {
-                    player.party_number = None;
+                    // D4: Stale party numbers -> None
+                    players[idx].party_number = None;
                 }
+            } else {
+                // D4: Stale party numbers -> None
+                players[idx].party_number = None;
             }
         }
     }
@@ -74,78 +95,42 @@ pub fn assign_party_numbers(
 /// For players without presence data (non-friends on the same team), use
 /// shared partyId from recent match history as a fallback.
 /// Only fills gaps — presence data always wins.
-pub fn enrich_party_from_match_history(
-    players: &mut Vec<ValorantPlayer>,
-    match_detail_lookup: &HashMap<String, Value>,
+pub fn enrich_party_from_match_history<T: std::borrow::Borrow<Value>>(
+    players: &mut [ValorantPlayer],
+    match_details: &[T],
 ) {
-    // Build a map of puuid → Set<partyId seen in recent matches>
-    // Two players who shared a partyId in any of their recent matches
-    // are assumed to be queued together.
-    let mut puuid_to_recent_parties: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
+    let lobby_puuids: std::collections::HashSet<String> = players.iter().map(|p| p.puuid.clone()).collect();
 
-    for (_, detail) in match_detail_lookup.iter() {
-        if let Some(match_players) = detail["players"].as_array() {
-            for mp in match_players {
-                let puuid = mp["subject"].as_str().unwrap_or("").to_string();
-                let party_id = mp["partyId"].as_str()
-                    .or_else(|| mp["PartyID"].as_str())
-                    .unwrap_or("")
-                    .to_string();
-                if !puuid.is_empty() && !party_id.is_empty() {
-                    puuid_to_recent_parties
-                        .entry(puuid)
-                        .or_default()
-                        .insert(party_id);
-                }
-            }
-        }
-    }
-
-    // For each lobby player with no partyId, find another lobby player on the
-    // same team who shares a recent-match partyId
-    let puuids: Vec<String> = players.iter().map(|p| p.puuid.clone()).collect();
-    let team_ids: Vec<String> = players.iter().map(|p| p.team_id.clone()).collect();
-    let existing_party_ids: Vec<Option<String>> = players.iter().map(|p| p.party_id.clone()).collect();
-
-    // For players without presence, try to assign a synthetic partyId based
-    // on shared match history
-    let mut synthetic_parties: HashMap<String, String> = HashMap::new();
-    let mut next_synthetic = 0u32;
-
-    for i in 0..players.len() {
-        if existing_party_ids[i].is_some() { continue; } // already has presence
-        let my_parties = match puuid_to_recent_parties.get(&puuids[i]) {
-            Some(s) => s,
+    for detail in match_details {
+        let detail_val: &Value = detail.borrow();
+        let match_players = match detail_val.get("players").and_then(|p| p.as_array()) {
+            Some(arr) => arr,
             None => continue,
         };
 
-        for j in (i + 1)..players.len() {
-            if existing_party_ids[j].is_some() { continue; }
-            if team_ids[i] != team_ids[j] { continue; }
-
-            let their_parties = match puuid_to_recent_parties.get(&puuids[j]) {
-                Some(s) => s,
-                None => continue,
-            };
-
-            // If they share any partyId in recent history, group them
-            if my_parties.intersection(their_parties).next().is_some() {
-                // Both get the same synthetic partyId
-                let synth = synthetic_parties.get(&puuids[i]).cloned().unwrap_or_else(|| {
-                    next_synthetic += 1;
-                    format!("__synth_{}", next_synthetic)
-                });
-                synthetic_parties.insert(puuids[i].clone(), synth.clone());
-                synthetic_parties.insert(puuids[j].clone(), synth);
+        let mut party_groups: HashMap<String, Vec<String>> = HashMap::new();
+        for mp in match_players {
+            let puuid = mp["subject"].as_str()
+                .or_else(|| mp["Subject"].as_str())
+                .unwrap_or("");
+            let party_id = mp["partyId"].as_str()
+                .or_else(|| mp["PartyID"].as_str())
+                .unwrap_or("");
+            if puuid.is_empty() || party_id.is_empty() || !lobby_puuids.contains(puuid) {
+                continue;
             }
+            party_groups.entry(party_id.to_string()).or_default().push(puuid.to_string());
         }
-    }
 
-    // Apply synthetic parties
-    for player in players.iter_mut() {
-        if player.party_id.is_none() {
-            if let Some(synth) = synthetic_parties.get(&player.puuid) {
-                player.party_id = Some(synth.clone());
+        for (party_id, members) in party_groups {
+            if members.len() < 2 { continue; }
+            for puuid in members.iter() {
+                if let Some(player) = players.iter_mut().find(|p| &p.puuid == puuid) {
+                    if player.party_id.is_none() {
+                        player.party_id = Some(party_id.clone());
+                        player.party_size = Some(members.len() as u32);
+                    }
+                }
             }
         }
     }
@@ -274,5 +259,59 @@ mod tests {
         presences.insert("p1".to_string(), PresenceInfo { party_id: "party-solo".to_string(), party_size: 1 });
         assign_party_numbers(&mut players, &presences);
         assert_eq!(players[0].party_number, None);
+    }
+
+    #[test]
+    fn numbers_parties_in_lobby_order_and_preserves_presence_size() {
+        let mut players = vec![
+            make_player("p1", "Blue"),
+            make_player("p2", "Blue"),
+            make_player("p3", "Blue"),
+            make_player("p4", "Blue"),
+        ];
+        let mut presences = HashMap::new();
+        // p1 and p3 are in party-Z
+        presences.insert("p1".to_string(), PresenceInfo { party_id: "party-Z".to_string(), party_size: 5 });
+        presences.insert("p3".to_string(), PresenceInfo { party_id: "party-Z".to_string(), party_size: 5 });
+        // p2 and p4 are in party-A
+        presences.insert("p2".to_string(), PresenceInfo { party_id: "party-A".to_string(), party_size: 2 });
+        presences.insert("p4".to_string(), PresenceInfo { party_id: "party-A".to_string(), party_size: 2 });
+
+        assign_party_numbers(&mut players, &presences);
+
+        // Lobby order: party-Z appears first (at index 0), so it gets party_number 1
+        assert_eq!(players[0].party_number, Some(1));
+        assert_eq!(players[2].party_number, Some(1));
+        // party-A appears next (at index 1), so it gets party_number 2
+        assert_eq!(players[1].party_number, Some(2));
+        assert_eq!(players[3].party_number, Some(2));
+
+        // D3: party_size is preserved as 5 from presence, not overwritten by team count (2)
+        assert_eq!(players[0].party_size, Some(5));
+    }
+
+    #[test]
+    fn enrich_party_from_match_history_fallback() {
+        let mut players = vec![
+            make_player("p1", "Blue"),
+            make_player("p2", "Blue"),
+            make_player("p3", "Blue"),
+        ];
+
+        let detail = serde_json::json!({
+            "players": [
+                { "subject": "p1", "partyId": "hist-party-1" },
+                { "subject": "p2", "partyId": "hist-party-1" },
+                { "subject": "p3", "partyId": "hist-party-2" },
+            ]
+        });
+
+        enrich_party_from_match_history(&mut players, &[detail]);
+
+        assert_eq!(players[0].party_id.as_deref(), Some("hist-party-1"));
+        assert_eq!(players[0].party_size, Some(2));
+        assert_eq!(players[1].party_id.as_deref(), Some("hist-party-1"));
+        assert_eq!(players[1].party_size, Some(2));
+        assert_eq!(players[2].party_id, None); // only 1 lobby member
     }
 }

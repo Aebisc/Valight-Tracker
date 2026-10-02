@@ -10,11 +10,10 @@
 use serde_json::Value;
 
 // ─── Rounding helpers ─────────────────────────────────────────────────────────
-// JS Math.round rounds to the nearest integer, with 0.5 rounding away from
-// zero (same as Rust's f64::round). But f64::round in Rust is also
-// "round half away from zero", matching JS. So for simple integer rounding
-// the behaviour is identical. The tricky case is the "one decimal place"
-// pattern: Math.round(x * 10) / 10. We replicate this exactly.
+// JS Math.round rounds to the nearest integer, with 0.5 rounding half toward
+// +∞ (matching Rust's f64::round for non-negative numbers). Since all stats
+// rounded here are non-negative, the behaviour is identical. We replicate
+// Math.round(x * 10) / 10 and Math.round(x * 100) / 100 exactly.
 
 /// Round to one decimal place, matching JS Math.round(x * 10) / 10.
 #[inline]
@@ -152,9 +151,9 @@ mod tests {
     fn rounding_matches_js() {
         // JS: Math.round(0.15 * 1000) / 10 = 15.0
         assert_eq!(round_pct(0.15), 15.0);
-        // JS: Math.round(1.005 * 100) / 100 — known JS edge case (float imprecision)
-        // Both JS and Rust produce 1.01 here due to IEEE 754
-        assert_eq!(round2(1.005_f64), 1.0); // actually 1.00 due to f64 representation
+        // JS: Math.round(1.005 * 100) / 100 = 1 (due to IEEE-754 1.005 being 1.0049999999999998934...)
+        // Both JS and Rust produce 1.0 here due to IEEE 754 float representation.
+        assert_eq!(round2(1.005_f64), 1.0);
     }
 
     #[test]

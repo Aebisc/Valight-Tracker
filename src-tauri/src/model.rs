@@ -103,6 +103,40 @@ pub struct ApiResponse {
     pub self_puuid: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiErrorKind {
+    Auth,
+    Transient,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiError {
+    pub kind: ApiErrorKind,
+    pub message: String,
+}
+
+impl ApiError {
+    pub fn auth(msg: impl Into<String>) -> Self {
+        Self { kind: ApiErrorKind::Auth, message: msg.into() }
+    }
+    pub fn transient(msg: impl Into<String>) -> Self {
+        Self { kind: ApiErrorKind::Transient, message: msg.into() }
+    }
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self { kind: ApiErrorKind::Internal, message: msg.into() }
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.kind, self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
 impl ApiResponse {
     pub fn offline() -> Self {
         Self {

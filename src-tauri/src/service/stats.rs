@@ -55,7 +55,6 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
     let mut bodyshots = 0u32;
     let mut legshots = 0u32;
     let mut total_damage = 0u64;
-    let mut rounds_participated = 0u32;
 
     if let Some(rounds) = match_detail["roundResults"].as_array() {
         for round in rounds {
@@ -64,7 +63,6 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
                     ps["subject"].as_str() == Some(puuid) || ps["Subject"].as_str() == Some(puuid)
                 }));
             if let Some(ps) = ps {
-                rounds_participated += 1;
                 if let Some(dmgs) = ps["damage"].as_array() {
                     for dmg in dmgs {
                         headshots += dmg["headshots"].as_u64().unwrap_or(0) as u32;
@@ -82,10 +80,15 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         round_pct(headshots as f64 / total_shots as f64)
     } else { 0.0 };
 
-    let total_rounds = match_detail["roundResults"].as_array().map(|a| a.len()).unwrap_or(1);
-    let acs = if total_rounds > 0 { (score as f64 / total_rounds as f64).round() as u32 } else { 0 };
-    let adr = if rounds_participated > 0 {
-        round1(total_damage as f64 / rounds_participated as f64)
+    let rounds_len = match_detail["roundResults"].as_array().map(|a| a.len()).unwrap_or(0);
+    let rounds_played = stats_node
+        .and_then(|s| s["roundsPlayed"].as_u64())
+        .map(|r| r as usize)
+        .unwrap_or(rounds_len);
+
+    let acs = if rounds_played > 0 { ((score as f64) / (rounds_played as f64)).round() as u32 } else { 0 };
+    let adr = if rounds_played > 0 {
+        round1(total_damage as f64 / rounds_played as f64)
     } else { 0.0 };
 
     // Win/loss from team data
@@ -101,10 +104,7 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
                 let wins = team["roundsWon"].as_u64().unwrap_or(0) as f64;
                 let total = team["roundsPlayed"].as_u64().unwrap_or(0) as f64;
                 let wr = if total > 0.0 { round_pct(wins / total) } else { 0.0 };
-                let won = if let (Some(t_won), Some(_o_won)) = (
-                    team["won"].as_bool(),
-                    opp.and_then(|o| o["won"].as_bool()),
-                ) {
+                let won = if let Some(t_won) = team["won"].as_bool() {
                     t_won
                 } else {
                     let opp_wins = opp.and_then(|o| o["roundsWon"].as_u64()).unwrap_or(0) as f64;
@@ -133,30 +133,29 @@ pub fn get_match_result(match_detail: &Value, puuid: &str) -> MatchResult {
 
     if team_id.is_empty() { return MatchResult::L; }
 
-    if let Some(teams) = match_detail["teams"].as_array() {
-        let team = teams.iter().find(|t| t["teamId"].as_str() == Some(team_id));
-        let opp  = teams.iter().find(|t| t["teamId"].as_str() != Some(team_id));
+    let teams = match_detail["teams"].as_array();
+    let team = teams.and_then(|arr| arr.iter().find(|t| t["teamId"].as_str() == Some(team_id)));
+    let opp = teams.and_then(|arr| arr.iter().find(|t| t["teamId"].as_str() != Some(team_id)));
 
-        if let (Some(t), Some(o)) = (team, opp) {
-            if let (Some(t_won), Some(o_won)) = (t["won"].as_bool(), o["won"].as_bool()) {
-                return match (t_won, o_won) {
-                    (true, false)  => MatchResult::W,
-                    (false, true)  => MatchResult::L,
-                    _              => MatchResult::D,
-                };
-            }
-            // Fallback: compare rounds won
-            let my_rounds = t["roundsWon"].as_u64().unwrap_or(0);
-            let op_rounds = o["roundsWon"].as_u64().unwrap_or(0);
-            return match my_rounds.cmp(&op_rounds) {
-                std::cmp::Ordering::Greater => MatchResult::W,
-                std::cmp::Ordering::Less    => MatchResult::L,
-                std::cmp::Ordering::Equal   => MatchResult::D,
-            };
-        }
+    if let (Some(t_won), Some(o_won)) = (
+        team.and_then(|t| t["won"].as_bool()),
+        opp.and_then(|o| o["won"].as_bool()),
+    ) {
+        return match (t_won, o_won) {
+            (true, false) => MatchResult::W,
+            (false, true) => MatchResult::L,
+            _ => MatchResult::D,
+        };
     }
 
-    MatchResult::L
+    let my_rounds = team.and_then(|t| t["roundsWon"].as_u64()).unwrap_or(0);
+    let op_rounds = opp.and_then(|o| o["roundsWon"].as_u64()).unwrap_or(0);
+
+    match my_rounds.cmp(&op_rounds) {
+        std::cmp::Ordering::Greater => MatchResult::W,
+        std::cmp::Ordering::Less    => MatchResult::L,
+        std::cmp::Ordering::Equal   => MatchResult::D,
+    }
 }
 
 // ─── aggregatePlayerStats ─────────────────────────────────────────────────────
@@ -178,7 +177,10 @@ pub struct AggregatedStats {
 }
 
 /// Port of aggregatePlayerStats(). Averages stats across N matches.
-pub fn aggregate_player_stats(match_details: &[Value], puuid: &str) -> AggregatedStats {
+pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
+    match_details: &[T],
+    puuid: &str,
+) -> AggregatedStats {
     let zero = AggregatedStats {
         kills: 0.0, deaths: 0.0, assists: 0.0, kd: 0.0,
         headshots: 0, bodyshots: 0, legshots: 0, headshot_percent: 0.0,
@@ -197,7 +199,7 @@ pub fn aggregate_player_stats(match_details: &[Value], puuid: &str) -> Aggregate
     let mut counted = 0u32;
 
     for detail in match_details {
-        let s = extract_player_stats(detail, puuid);
+        let s = extract_player_stats(detail.borrow(), puuid);
         sum_kills    += s.kills;
         sum_deaths   += s.deaths;
         sum_assists  += s.assists;
@@ -270,5 +272,85 @@ mod tests {
     fn match_result_missing_player_is_loss() {
         let detail = json!({ "players": [], "teams": [] });
         assert_eq!(get_match_result(&detail, "ghost"), MatchResult::L);
+    }
+
+    #[test]
+    fn match_result_missing_teams_returns_draw() {
+        let detail = json!({
+            "players": [{ "subject": "p1", "teamId": "Blue" }],
+            "teams": []
+        });
+        assert_eq!(get_match_result(&detail, "p1"), MatchResult::D);
+    }
+
+    #[test]
+    fn match_result_missing_opponent_returns_draw_or_rounds() {
+        let detail = json!({
+            "players": [{ "subject": "p1", "teamId": "Blue" }],
+            "teams": [
+                { "teamId": "Blue", "roundsWon": 0 }
+            ]
+        });
+        assert_eq!(get_match_result(&detail, "p1"), MatchResult::D);
+    }
+
+    #[test]
+    fn match_result_won_present_on_only_one_team() {
+        let detail = json!({
+            "players": [{ "subject": "p1", "teamId": "Blue" }],
+            "teams": [
+                { "teamId": "Blue", "won": true, "roundsWon": 13 },
+                { "teamId": "Red",  "roundsWon": 5 },
+            ]
+        });
+        // Node: when one team lacks boolean won, falls through to roundsWon comparison
+        assert_eq!(get_match_result(&detail, "p1"), MatchResult::W);
+    }
+
+    #[test]
+    fn stats_extract_denominator_cases() {
+        // Case 1: stats.roundsPlayed differs from roundResults.len()
+        let detail1 = json!({
+            "players": [{
+                "subject": "p1",
+                "teamId": "Blue",
+                "stats": { "score": 2000, "roundsPlayed": 20 }
+            }],
+            "roundResults": [
+                { "playerStats": [{ "subject": "p1", "damage": [{ "damage": 300 }] }] }
+            ],
+            "teams": [{ "teamId": "Blue", "roundsWon": 13, "roundsPlayed": 20, "won": true }]
+        });
+        let s1 = extract_player_stats(&detail1, "p1");
+        // ACS = 2000 / 20 = 100 (not 2000 / 1)
+        assert_eq!(s1.acs, 100);
+        // ADR = 300 / 20 = 15.0
+        assert_eq!(s1.adr, 15.0);
+
+        // Case 2: missing roundResults
+        let detail2 = json!({
+            "players": [{
+                "subject": "p1",
+                "teamId": "Blue",
+                "stats": { "score": 500, "roundsPlayed": 5 }
+            }],
+            "teams": [{ "teamId": "Blue", "roundsWon": 5, "roundsPlayed": 5 }]
+        });
+        let s2 = extract_player_stats(&detail2, "p1");
+        assert_eq!(s2.acs, 100);
+
+        // Case 3: early leaver (stats.roundsPlayed is 0 or missing, rounds.len() is 10)
+        let detail3 = json!({
+            "players": [{
+                "subject": "p1",
+                "teamId": "Blue",
+                "stats": { "score": 0 }
+            }],
+            "roundResults": vec![json!({}); 10],
+            "teams": [{ "teamId": "Blue", "roundsWon": 5, "roundsPlayed": 10 }]
+        });
+        let s3 = extract_player_stats(&detail3, "p1");
+        assert_eq!(s3.acs, 0);
+        assert_eq!(s3.adr, 0.0);
     }
 }

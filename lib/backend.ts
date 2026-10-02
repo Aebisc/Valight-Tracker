@@ -33,13 +33,15 @@ export async function fetchMatchData(force = false): Promise<ApiResponse> {
   if (isTauri()) {
     try {
       return await invoke<ApiResponse>("get_match", { force });
-    } catch (err) {
+    } catch (err: any) {
       console.error("[backend:invoke] failed to get_match:", err);
+      const message = typeof err === "object" && err !== null && "message" in err ? String(err.message) : String(err);
       return {
         gameState: "ERROR",
-        error: String(err),
+        error: message,
       };
     }
+
   }
 
   // Browser dev mode / fallback

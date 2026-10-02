@@ -124,7 +124,9 @@
       "lastMatchDeaths": 0,
       "lastMatchAssists": 0,
       "lastMatchKD": 0,
-      "recentResults": []
+      "recentResults": [],
+      "partyId": "aaaaaaaa-0907-0000-0000-000000000000",
+      "partySize": 1
     },
     {
       "puuid": "aaaaaaaa-0008-0000-0000-000000000000",

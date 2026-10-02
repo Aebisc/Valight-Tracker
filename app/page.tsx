@@ -92,6 +92,27 @@ export default function Home() {
               <span className="tag" style={{ color: reconnecting ? "var(--amber, #fbbf24)" : "var(--accent)", borderColor: reconnecting ? "rgba(251, 191, 36, 0.25)" : "var(--border-accent)", marginTop: 14 }}>{error}</span>
             )}
           </Splash>
+        ) : gameState === "ERROR" ? (
+          <Splash>
+            <div className="card" style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 8, borderColor: "var(--down)" }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--down)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <p className="t-display" style={{ fontSize: 28, marginTop: 20 }}>Connection Error</p>
+            <p className="t-label" style={{ marginTop: 10, color: "var(--ink-muted)", fontSize: 13, letterSpacing: 1, maxWidth: 480 }}>{error || "An error occurred while communicating with Valorant"}</p>
+            <button
+              onClick={refresh}
+              disabled={refreshing}
+              className="btn-ghost"
+              style={{ marginTop: 24, padding: "10px 24px" }}
+            >
+              Retry
+            </button>
+          </Splash>
+
         ) : gameState === "MENUS" ? (
           <div className="a-enter" style={{ maxWidth: 760, margin: "0 auto", width: "100%", minHeight: "70vh", display: "flex", flexDirection: "column", justifyContent: "center", gap: 24 }}>
             <div className="card a-enter" style={{ padding: "32px 36px", display: "flex", alignItems: "center", gap: 24 }}>

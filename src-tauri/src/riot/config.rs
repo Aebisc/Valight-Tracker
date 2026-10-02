@@ -4,7 +4,6 @@
 // Reads entitlements from the Riot local client and region/version from
 // ShooterGame.log. Caches the result until force=true or a 401/403 clears it.
 
-use std::path::PathBuf;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use tokio::sync::Mutex;
 use thiserror::Error;
@@ -26,8 +25,8 @@ fn region_config(region: &str) -> &'static RegionEndpoints {
     static EU: RegionEndpoints = RegionEndpoints { pd: "https://pd.eu.a.pvp.net", glz: "https://glz-eu-1.eu.a.pvp.net", shard: "eu" };
     static AP: RegionEndpoints = RegionEndpoints { pd: "https://pd.ap.a.pvp.net", glz: "https://glz-ap-1.ap.a.pvp.net", shard: "ap" };
     static KR: RegionEndpoints = RegionEndpoints { pd: "https://pd.kr.a.pvp.net", glz: "https://glz-kr-1.kr.a.pvp.net", shard: "kr" };
-    static BR: RegionEndpoints = RegionEndpoints { pd: "https://pd.br.a.pvp.net", glz: "https://glz-br-1.br.a.pvp.net", shard: "br" };
-    static LATAM: RegionEndpoints = RegionEndpoints { pd: "https://pd.latam.a.pvp.net", glz: "https://glz-latam-1.latam.a.pvp.net", shard: "latam" };
+    static BR: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-br-1.na.a.pvp.net", shard: "na" };
+    static LATAM: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-latam-1.na.a.pvp.net", shard: "na" };
     match region {
         "eu" => &EU, "ap" => &AP, "kr" => &KR, "br" => &BR, "latam" => &LATAM, _ => &NA,
     }
@@ -35,9 +34,16 @@ fn region_config(region: &str) -> &'static RegionEndpoints {
 
 // ─── ApiConfig ────────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RiotEndpoints {
+    pub local_base: String,
+    pub pd: String,
+    pub glz: String,
+}
+
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ApiConfig {
+    pub endpoints: RiotEndpoints,
     pub pd_url: String,
     pub glz_url: String,
     pub region: String,
@@ -46,6 +52,8 @@ pub struct ApiConfig {
     pub version: String,
     /// Headers to attach to every Riot remote API request.
     pub headers: HeaderMap,
+    /// Epoch timestamp (seconds) when the access token expires.
+    pub expires_at: u64,
 }
 
 #[derive(Debug, Error)]
@@ -69,14 +77,53 @@ pub async fn clear_config_cache() {
     *CONFIG_CACHE.lock().await = None;
 }
 
+// ─── JWT parsing ─────────────────────────────────────────────────────────────
+
+pub fn parse_jwt_exp(token: &str) -> Option<u64> {
+    use base64::Engine;
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let payload_b64 = parts[1];
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload_b64))
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(payload_b64))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(payload_b64))
+        .ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    json.get("exp").and_then(|v| v.as_u64())
+}
+
 // ─── Log parsing ──────────────────────────────────────────────────────────────
+
+pub fn parse_log_metadata_from_str(content: &str) -> (String, String) {
+    let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
+    let ver_re = regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap();
+
+    let mut region = "na".to_string();
+    let mut version = "unknown".to_string();
+
+    if let Some(cap) = glz_re.captures(content) {
+        region = cap[1].to_string();
+    }
+    if let Some(cap) = ver_re.captures(content) {
+        version = cap[1].to_string();
+    }
+
+    (region, version)
+}
 
 /// Reads at most 512 KB of ShooterGame.log in 64 KB chunks and extracts
 /// the region (from a glz URL) and client version (from a release-X.Y string).
 /// Exits early once both are found. Matches extractLogMetadata() in valorant-api.ts.
-async fn extract_log_metadata() -> (String, String) {
-    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let log_path = PathBuf::from(&local_app_data)
+pub async fn extract_log_metadata() -> (String, String) {
+    let local_app_data = match super::lockfile::local_app_data() {
+        Ok(p) => p,
+        Err(_) => return ("na".to_string(), "unknown".to_string()),
+    };
+    let log_path = local_app_data
         .join("VALORANT")
         .join("Saved")
         .join("Logs")
@@ -116,9 +163,7 @@ async fn extract_log_metadata() -> (String, String) {
 
         if region == "na" {
             if let Some(cap) = glz_re.captures(&accumulated) {
-                if cap[1] == cap[2] {
-                    region = cap[1].to_string();
-                }
+                region = cap[1].to_string();
             }
         }
         if version == "unknown" {
@@ -131,6 +176,7 @@ async fn extract_log_metadata() -> (String, String) {
 
     (region, version)
 }
+
 
 // ─── Client platform header ───────────────────────────────────────────────────
 
@@ -149,12 +195,26 @@ fn client_platform_header() -> String {
 
 /// Port of getApiConfig(). Cached by (port, password) pair.
 pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfig, ConfigError> {
+    let local_client = build_local_client();
+    get_api_config_with_client_and_endpoints(&local_client, lockfile, force, None).await
+}
+
+pub async fn get_api_config_with_client_and_endpoints(
+    local_client: &reqwest::Client,
+    lockfile: &Lockfile,
+    force: bool,
+    endpoints_override: Option<RiotEndpoints>,
+) -> Result<ApiConfig, ConfigError> {
     let cache_key = format!("{}:{}", lockfile.port, lockfile.password);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
 
     if !force {
         let guard = CONFIG_CACHE.lock().await;
         if let Some(entry) = guard.as_ref() {
-            if entry.cache_key == cache_key {
+            if entry.cache_key == cache_key && entry.config.expires_at > now + 120 {
                 tracing::debug!("ApiConfig cache hit");
                 return Ok(entry.config.clone());
             }
@@ -163,10 +223,12 @@ pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfi
 
     tracing::debug!("Fetching entitlements from port {}", lockfile.port);
 
-    // Use a temporary local client just for the entitlements call
-    // (The shared one is in AppState, but config.rs needs to work standalone too)
-    let local_client = build_local_client();
-    let url = format!("https://127.0.0.1:{}/entitlements/v1/token", lockfile.port);
+    let default_local_base = format!("https://127.0.0.1:{}", lockfile.port);
+    let local_base = endpoints_override
+        .as_ref()
+        .map(|ep| ep.local_base.as_str())
+        .unwrap_or(&default_local_base);
+    let url = format!("{}/entitlements/v1/token", local_base);
 
     let res = local_client
         .get(&url)
@@ -201,14 +263,24 @@ pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfi
         headers.insert(HeaderName::from_static("x-riot-clientplatform"), val);
     }
 
+    let endpoints = endpoints_override.unwrap_or_else(|| RiotEndpoints {
+        local_base: default_local_base,
+        pd: rc.pd.to_string(),
+        glz: rc.glz.to_string(),
+    });
+
+    let expires_at = parse_jwt_exp(&access_token).unwrap_or(now + 1800);
+
     let config = ApiConfig {
-        pd_url: rc.pd.to_string(),
-        glz_url: rc.glz.to_string(),
+        pd_url: endpoints.pd.clone(),
+        glz_url: endpoints.glz.clone(),
+        endpoints,
         region: region.clone(),
         shard: rc.shard.to_string(),
         puuid: puuid.clone(),
         version: version.clone(),
         headers,
+        expires_at,
     };
 
     *CONFIG_CACHE.lock().await = Some(CacheEntry {
@@ -222,6 +294,8 @@ pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfi
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_regex_compilation() {
         let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
@@ -236,4 +310,53 @@ mod tests {
         let cap_ver = ver_re.captures(sample_ver).unwrap();
         assert_eq!(&cap_ver[1], "09.08-shipping-17-2917751");
     }
+
+    #[test]
+    fn test_parse_log_metadata_regions() {
+        let cases = [
+            ("na", "https://glz-na-1.na.a.pvp.net", "release-09.08-shipping-17-2917751"),
+            ("eu", "https://glz-eu-1.eu.a.pvp.net", "release-13.06-shipping-18-5590001"),
+            ("ap", "https://glz-ap-1.ap.a.pvp.net", "release-10.01-shipping-1-1000000"),
+            ("kr", "https://glz-kr-1.kr.a.pvp.net", "release-11.00-shipping-2-2000000"),
+            ("latam", "https://glz-latam-1.na.a.pvp.net", "release-12.00-shipping-3-3000000"),
+            ("br", "https://glz-br-1.na.a.pvp.net", "release-12.05-shipping-4-4000000"),
+        ];
+
+        for (expected_region, glz_url, ver_str) in cases {
+            let log = format!("Log: Browse {}\nLog: CI server version: {}\n", glz_url, ver_str);
+            let (region, version) = parse_log_metadata_from_str(&log);
+            assert_eq!(region, expected_region);
+            assert!(ver_str.contains(&version));
+        }
+
+        assert_eq!(region_config("latam").shard, "na");
+        assert_eq!(region_config("latam").pd, "https://pd.na.a.pvp.net");
+        assert_eq!(region_config("br").shard, "na");
+        assert_eq!(region_config("br").pd, "https://pd.na.a.pvp.net");
+    }
+
+    #[test]
+    fn test_parse_jwt_exp() {
+        // Sample JWT payload: {"sub":"123","exp":1893456000}
+        // Base64Url of {"sub":"123","exp":1893456000} is eyJzdWIiOiIxMjMiLCJleHAiOjE4OTM0NTYwMDB9
+        let sample_jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMiLCJleHAiOjE4OTM0NTYwMDB9.signature";
+        assert_eq!(parse_jwt_exp(sample_jwt), Some(1893456000));
+        assert_eq!(parse_jwt_exp("invalid.token"), None);
+    }
+
+    #[test]
+    fn test_parse_log_metadata_defaults_when_empty() {
+        let (region, version) = parse_log_metadata_from_str("empty log without matches");
+        assert_eq!(region, "na");
+        assert_eq!(version, "unknown");
+    }
+
+    #[test]
+    fn test_parse_log_metadata_fixture_log() {
+        let fixture_log = include_str!("../../fixtures/redacted/pregame_comp/shootergame_log.txt");
+        let (region, version) = parse_log_metadata_from_str(fixture_log);
+        assert_eq!(region, "eu");
+        assert_eq!(version, "13.06-shipping-18-5590001");
+    }
 }
+

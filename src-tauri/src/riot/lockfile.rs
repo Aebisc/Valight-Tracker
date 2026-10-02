@@ -26,32 +26,28 @@ pub enum LockfileError {
     Io(#[from] std::io::Error),
 }
 
-pub fn lockfile_path() -> PathBuf {
-    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| {
-        // Fallback for non-standard setups — log a warning
-        tracing::warn!("LOCALAPPDATA not set, using C:\\Users\\Default\\AppData\\Local");
-        r"C:\Users\Default\AppData\Local".to_string()
-    });
-    PathBuf::from(local_app_data)
+pub fn local_app_data() -> Result<PathBuf, LockfileError> {
+    if let Ok(override_path) = std::env::var("VALIGHT_LOCALAPPDATA") {
+        if !override_path.is_empty() {
+            return Ok(PathBuf::from(override_path));
+        }
+    }
+    std::env::var("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map_err(|_| LockfileError::NotFound {
+            path: "LOCALAPPDATA environment variable not set".to_string(),
+        })
+}
+
+pub fn lockfile_path() -> Result<PathBuf, LockfileError> {
+    Ok(local_app_data()?
         .join("Riot Games")
         .join("Riot Client")
         .join("Config")
-        .join("lockfile")
+        .join("lockfile"))
 }
 
-pub async fn read_lockfile() -> Result<Lockfile, LockfileError> {
-    let path = lockfile_path();
-
-    let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            LockfileError::NotFound {
-                path: path.display().to_string(),
-            }
-        } else {
-            LockfileError::Io(e)
-        }
-    })?;
-
+pub fn parse_lockfile(content: &str) -> Result<Lockfile, LockfileError> {
     let parts: Vec<&str> = content.trim().splitn(5, ':').collect();
     if parts.len() < 5 {
         return Err(LockfileError::BadFormat { parts: parts.len() });
@@ -80,22 +76,60 @@ pub async fn read_lockfile() -> Result<Lockfile, LockfileError> {
     })
 }
 
+pub async fn read_lockfile() -> Result<Lockfile, LockfileError> {
+    let path = lockfile_path()?;
+
+    let content = tokio::fs::read_to_string(&path).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            LockfileError::NotFound {
+                path: path.display().to_string(),
+            }
+        } else {
+            LockfileError::Io(e)
+        }
+    })?;
+
+    parse_lockfile(&content)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn parses_standard_lockfile() {
-        // Simulate parsing with a known lockfile string
         let content = "RiotClient:12345:54321:mypassword:https";
-        let parts: Vec<&str> = content.trim().splitn(5, ':').collect();
-        assert_eq!(parts.len(), 5);
-        assert_eq!(parts[2], "54321");
-        assert_eq!(parts[3], "mypassword");
+        let parsed = parse_lockfile(content).expect("should parse valid lockfile");
+        assert_eq!(parsed.port, 54321);
+        assert_eq!(parsed.password, "mypassword");
+        assert_eq!(parsed.basic_auth, "Basic cmlvdDpteXBhc3N3b3Jk");
+    }
 
-        let port: u16 = parts[2].parse().unwrap();
-        assert_eq!(port, 54321);
+    #[test]
+    fn parses_lockfile_with_trailing_newlines() {
+        let content = "RiotClient:12345:54321:mypassword:https\r\n";
+        let parsed = parse_lockfile(content).expect("should handle trailing newlines");
+        assert_eq!(parsed.port, 54321);
+        assert_eq!(parsed.password, "mypassword");
+    }
 
-        use base64::Engine;
-        let basic = base64::engine::general_purpose::STANDARD.encode("riot:mypassword");
-        assert!(basic.len() > 0);
+    #[test]
+    fn fails_on_incomplete_lockfile() {
+        let content = "RiotClient:12345:54321";
+        let err = parse_lockfile(content).unwrap_err();
+        match err {
+            LockfileError::BadFormat { parts } => assert_eq!(parts, 3),
+            _ => panic!("expected BadFormat error"),
+        }
+    }
+
+    #[test]
+    fn fails_on_invalid_port() {
+        let content = "RiotClient:12345:notaport:mypassword:https";
+        let err = parse_lockfile(content).unwrap_err();
+        match err {
+            LockfileError::BadPort { raw } => assert_eq!(raw, "notaport"),
+            _ => panic!("expected BadPort error"),
+        }
     }
 }

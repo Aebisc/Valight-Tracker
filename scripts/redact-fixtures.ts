@@ -68,12 +68,31 @@ function redactValue(v: unknown, key?: string): unknown {
   if (v === null || v === undefined) return v;
 
   if (typeof v === "string") {
+    // JWT strings (e.g. TeamMatchToken or any other signed Riot JWT)
+    if (v.startsWith("eyJ") && v.includes(".")) {
+      return "fake-jwt-token";
+    }
+
     // Token fields
     if (key === "accessToken" || key === "token") return "fake-access-token";
     if (key === "entitlementsToken") return "fake-entitlements-token";
     // Name fields
-    if (key === "GameName" || key === "DisplayName") return fakeName(v);
-    if (key === "TagLine") return fakeTag(v);
+    if (key === "GameName" || key === "DisplayName" || key === "game_name") return fakeName(v);
+    if (key === "TagLine" || key === "game_tag") return fakeTag(v);
+    if (key === "name" && v.length > 0) return fakeName(v);
+
+    // Presence base64 payloads
+    if (key === "private" || key === "packedData") {
+      try {
+        const decodedStr = Buffer.from(v, "base64").toString("utf-8");
+        const parsed = JSON.parse(decodedStr);
+        const redactedObj = redactValue(parsed);
+        return Buffer.from(JSON.stringify(redactedObj)).toString("base64");
+      } catch {
+        // Not JSON base64, fall through
+      }
+    }
+
     // Generic PUUID replacement in strings
     return redactString(v);
   }

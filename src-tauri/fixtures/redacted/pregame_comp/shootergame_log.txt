@@ -24,7 +24,7 @@ LogInit: OS: Windows 11 (25H2) [10.0.26200.8973] (), CPU: 11th Gen Intel(R) Core
 [2026.10.01-15.29.00:315][  0]LogUObjectGlobals: Error: CDO Constructor (TextRenderComponent): Failed to find /Engine/EngineMaterials/DefaultTextMaterialOpaque
 
 [2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings: Monitor info changed:
-[2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings:   [0] MONITOR\MSI3BC5\{aaaaaaaa-0907-0000-0000-000000000000}\0004 (1920x1080)
+[2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings:   [0] MONITOR\MSI3BC5\{aaaaaaaa-0908-0000-0000-000000000000}\0004 (1920x1080)
 [2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings:    - 1920 x 1080 (200 Hz)
 [2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings:    - 1680 x 1050 (200 Hz)
 [2026.10.01-15.29.00:953][  0]LogShooterGameUserSettings:    - 1760 x 990 (200 Hz)
@@ -45,7 +45,7 @@ LogInit: OS: Windows 11 (25H2) [10.0.26200.8973] (), CPU: 11th Gen Intel(R) Core
 [2026.10.01-15.29.02:411][  0]LogShooter: Display: Changelist: 5590001
 [2026.10.01-15.29.02:411][  0]LogShooter: Display: Build version: 18
 [2026.10.01-15.29.02:411][  0]LogShooter: Display: Build configuration: Shipping
-[2026.10.01-15.29.02:411][  0]LogShooter: Display: Machine ID for crash reporting: aaaaaaaa-0908-0000-0000-000000000000
+[2026.10.01-15.29.02:411][  0]LogShooter: Display: Machine ID for crash reporting: aaaaaaaa-0909-0000-0000-000000000000
 [2026.10.01-15.29.02:411][  0]LogShooter: Display: User ID for crash reporting: aaaaaaaa-0014-0000-0000-000000000000
 [2026.10.01-15.29.02:412][  0]LogShooter: Display: -----------------------------------------
 [2026.10.01-15.29.02:416][  0]LogRGIPatchlineData: Error: Unable to parse patchline manifest file '../../../CoreSDK/Plugins/Runtime/RGIPatchlineData/Resources/patchline_manifest.json'.  Looks like:
@@ -54,7 +54,7 @@ This is a placeholder file which will be replaced with the real patchline manife
 [2026.10.01-15.29.02:457][  0]LogStreaming: Warning: LoadPackage: SkipPackage: /Engine/EngineMaterials/WeightMapPlaceholderTexture (0xD558CD1A1CF27740) - The package to load does not exist on disk or in the loader
 [2026.10.01-15.29.02:457][  0]LogUObjectGlobals: Warning: Failed to find object 'Texture /Engine/EngineMaterials/WeightMapPlaceholderTexture.WeightMapPlaceholderTexture'
 [2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings: Monitor info changed:
-[2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings:   [0] MONITOR\MSI3BC5\{aaaaaaaa-0907-0000-0000-000000000000}\0004 (1920x1080)
+[2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings:   [0] MONITOR\MSI3BC5\{aaaaaaaa-0908-0000-0000-000000000000}\0004 (1920x1080)
 [2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings:    - 1920 x 1080 (200 Hz)
 [2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings:    - 1680 x 1050 (200 Hz)
 [2026.10.01-15.29.03:295][  0]LogShooterGameUserSettings:    - 1760 x 990 (200 Hz)
@@ -310,7 +310,7 @@ This is a placeholder file which will be replaced with the real patchline manife
 [2026.10.01-15.29.09:210][103]LogPlatformCommon: Platform HTTP Query End. QueryName: [LoginQueue_FetchToken], URL [POST https://euc1.pp.sgp.pvp.net/login-queue/v2/login/products/valorant/regions/eu], @trace_id:cd383fbc4f3b790b52d56f91702feff3 Response Code: [200], Seconds Since Query [0.201000]
 [2026.10.01-15.29.09:210][103]LogPlatformInitializerV2: Initialized: LoginQueueManager in 0.350s
 [2026.10.01-15.29.09:210][103]LogPlatformInitializerV2: Initializing: PlatformSessionManager
-[2026.10.01-15.29.09:302][105]LogRiotGamesApiClient: Warning: [RiotGamesApi LogMessage] loyalty-v2: External process of product 'valorant' is not running. This is possibly a false session RMS notification. Skip session of sessionID: 'aaaaaaaa-0909-0000-0000-000000000000'
+[2026.10.01-15.29.09:302][105]LogRiotGamesApiClient: Warning: [RiotGamesApi LogMessage] loyalty-v2: External process of product 'valorant' is not running. This is possibly a false session RMS notification. Skip session of sessionID: 'aaaaaaaa-0910-0000-0000-000000000000'
 [2026.10.01-15.29.09:310][106]LogPlatformCommon: Platform HTTP Query End. QueryName: [Session_Connect], URL [POST https://glz-eu-1.eu.a.pvp.net/session/v2/sessions/aaaaaaaa-0014-0000-0000-000000000000/connect], @trace_id:bcfc70e44215473185902bb84b9dcd54 Response Code: [200], Seconds Since Query [0.099000]
 [2026.10.01-15.29.09:310][106]LogPlatformSessionManager: Loopstate changed from INVALID to MENUS
 [2026.10.01-15.29.09:310][106]LogGameFlowStateManager: Reconcile called with the current state: Initialization. No action taken.
@@ -705,8 +705,8 @@ This is a placeholder file which will be replaced with the real patchline manife
 [2026.10.01-15.29.09:411][109]LogPlatformCommon: Platform HTTP Query End. QueryName: [Store_GetAgentStorefront], URL [GET https://pd.eu.a.pvp.net/store/v1/storefronts/agent], @trace_id:6b64c00f4fef5fa9590e548a56b5aa8a Response Code: [200], Seconds Since Query [0.095000]
 [2026.10.01-15.29.09:413][109]LogPlatformCommon: Platform HTTP Query End. QueryName: [Store_GetWallet], URL [GET https://pd.eu.a.pvp.net/store/v1/wallet/aaaaaaaa-0014-0000-0000-000000000000], @trace_id:8af64742465791eebfe3beac3bc6d6a0 Response Code: [200], Seconds Since Query [0.097000]
 [2026.10.01-15.29.09:413][109]LogPlatformCommon: Platform HTTP Query End. QueryName: [Store_GetAllEntitlements], URL [GET https://pd.eu.a.pvp.net/store/v1/entitlements/aaaaaaaa-0014-0000-0000-000000000000], @trace_id:0fc98a164ec00d986e3cc982115a21f4 Response Code: [200], Seconds Since Query [0.097000]
-[2026.10.01-15.29.09:418][109]LogPersonalizationManagerV2: Warning: Skin aaaaaaaa-0910-0000-0000-000000000000 incompatible with equippable aaaaaaaa-0911-0000-0000-000000000000
-[2026.10.01-15.29.09:419][109]LogPersonalizationManagerV2: Warning: Skin aaaaaaaa-0910-0000-0000-000000000000 incompatible with equippable aaaaaaaa-0911-0000-0000-000000000000
+[2026.10.01-15.29.09:418][109]LogPersonalizationManagerV2: Warning: Skin aaaaaaaa-0911-0000-0000-000000000000 incompatible with equippable aaaaaaaa-0912-0000-0000-000000000000
+[2026.10.01-15.29.09:419][109]LogPersonalizationManagerV2: Warning: Skin aaaaaaaa-0911-0000-0000-000000000000 incompatible with equippable aaaaaaaa-0912-0000-0000-000000000000
 [2026.10.01-15.29.09:419][109]LogInventoryManager: Warning: StoreManager is not initialized. Skipping HandlePlankNumbersIsUnlockedChange.
 [2026.10.01-15.29.09:419][109]LogPlatformInitializerV2: Initialized: StoreManager in 0.106s
 [2026.10.01-15.29.09:419][109]LogPlatformInitializerV2: Initializing: SoupManager
@@ -734,16 +734,16 @@ This is a placeholder file which will be replaced with the real patchline manife
 [2026.10.01-15.29.09:427][109]LogPlatformInitializerV2: Initialized: EsportsManager in 0.000s
 [2026.10.01-15.29.09:476][111]LogPlatformCommon: Platform HTTP Query End. QueryName: [Party_FetchCustomGameConfigs], URL [GET https://glz-eu-1.eu.a.pvp.net/parties/v1/parties/customgameconfigs], @trace_id:7cc851cd4751e02d7fcdd4be7ab68b94 Response Code: [200], Seconds Since Query [0.163000]
 [2026.10.01-15.29.09:478][111]LogPlatformCommon: Platform HTTP Query End. QueryName: [ItemProgressionDefinitionsV2_Fetch], URL [GET https://pd.eu.a.pvp.net/contract-definitions/v3/item-upgrades], @trace_id:7941ac734e1d23f20c0fe1a2db1b6d3b Response Code: [200], Seconds Since Query [0.162000]
-[2026.10.01-15.29.09:537][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0912-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0913-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:537][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0913-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0914-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0915-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0915-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0916-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0917-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:539][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0918-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:538][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0918-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:539][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0919-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:541][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0920-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:539][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0920-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:541][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0921-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:543][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0922-0000-0000-000000000000.  Skipping Reward.
-[2026.10.01-15.29.09:543][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0923-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:541][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0922-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:543][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinLevelDataAsset with ID: aaaaaaaa-0923-0000-0000-000000000000.  Skipping Reward.
+[2026.10.01-15.29.09:543][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: aaaaaaaa-0924-0000-0000-000000000000.  Skipping Reward.
 [2026.10.01-15.29.09:543][111]LogRewardGrantModelFactory: Warning: NewRewardModel couldn't find a EquippableSkinChromaDataAsset with ID: 2a5fa181-4d3
