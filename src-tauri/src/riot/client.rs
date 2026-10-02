@@ -58,8 +58,13 @@ pub async fn safe_get_json(
     headers: &reqwest::header::HeaderMap,
 ) -> RiotResult<Value> {
     let mut retries = 0;
+    let req_builder = client.get(url).headers(headers.clone());
     loop {
-        let res = match client.get(url).headers(headers.clone()).send().await {
+        let req = match req_builder.try_clone() {
+            Some(b) => b,
+            None => client.get(url).headers(headers.clone()),
+        };
+        let res = match req.send().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("safe_get_json send error for {}: {}", url, e);
@@ -128,15 +133,20 @@ pub async fn safe_get_json(
 }
 
 /// Helper: PUT a URL with a JSON body, returning RiotResult with 429 retry support.
-pub async fn safe_put_json(
+pub async fn safe_put_json<T: serde::Serialize + ?Sized>(
     client: &Client,
     url: &str,
     headers: &reqwest::header::HeaderMap,
-    body: &Value,
+    body: &T,
 ) -> RiotResult<Value> {
     let mut retries = 0;
+    let req_builder = client.put(url).headers(headers.clone()).json(body);
     loop {
-        let res = match client.put(url).headers(headers.clone()).json(body).send().await {
+        let req = match req_builder.try_clone() {
+            Some(b) => b,
+            None => client.put(url).headers(headers.clone()).json(body),
+        };
+        let res = match req.send().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("safe_put_json send error for {}: {}", url, e);

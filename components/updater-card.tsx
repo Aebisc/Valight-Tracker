@@ -77,6 +77,7 @@ export default function UpdaterCard() {
     setTotalBytes(0);
 
     let downloadedAcc = 0;
+    let lastProgressUpdate = 0;
 
     try {
       await updateHandler.downloadAndInstall((event: DownloadEvent) => {
@@ -85,8 +86,13 @@ export default function UpdaterCard() {
           setTotalBytes(total);
         } else if (event.event === "Progress") {
           downloadedAcc += event.data.chunkLength;
-          setDownloadedBytes(downloadedAcc);
+          const now = Date.now();
+          if (now - lastProgressUpdate > 100) {
+            lastProgressUpdate = now;
+            setDownloadedBytes(downloadedAcc);
+          }
         } else if (event.event === "Finished") {
+          setDownloadedBytes(downloadedAcc);
           setStatus("installing");
         }
       });

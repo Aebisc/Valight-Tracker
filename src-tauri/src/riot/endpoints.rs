@@ -93,8 +93,7 @@ pub async fn get_names_from_puuids(
     puuids: &[String],
 ) -> Vec<Value> {
     let url = format!("{}/name-service/v2/players", cfg.pd_url);
-    let body = serde_json::to_value(puuids).unwrap_or(Value::Array(vec![]));
-    let result = safe_put_json(remote, &url, &cfg.headers, &body).await;
+    let result = safe_put_json(remote, &url, &cfg.headers, puuids).await;
     match result {
         RiotResult::Ok(Value::Array(arr)) => arr,
         _ => vec![],

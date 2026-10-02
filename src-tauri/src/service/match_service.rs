@@ -296,7 +296,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     let (resolved_match_id, resolved_game_state, raw_players, map_id, game_mode, game_mode_id,
          is_ranked, server, season_id, ally_team_id) = match detected {
         DetectedState::Ingame(ref mid) => {
-            let cg = match endpoints::get_coregame_match(&state.remote_client, &cfg, mid).await {
+            let mut cg = match endpoints::get_coregame_match(&state.remote_client, &cfg, mid).await {
                 RiotResult::Ok(v) => v,
                 RiotResult::NotFound => {
                     *state.match_cache.lock().await = None;
@@ -306,7 +306,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 RiotResult::RateLimited { .. } => return Err(ApiError::transient("Rate limited fetching coregame match")),
                 RiotResult::Transient(msg) => return Err(ApiError::transient(msg)),
             };
-            let players: Vec<Value> = cg["Players"].as_array().cloned().unwrap_or_default();
+            let players: Vec<Value> = cg["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
             let game_mode_id = cg["QueueID"].as_str().or_else(|| cg["ModeID"].as_str()).unwrap_or("").to_string();
             let is_ranked = cg["IsRanked"].as_bool().unwrap_or(game_mode_id == "competitive");
             (
@@ -323,7 +323,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             )
         }
         DetectedState::Pregame(ref mid) => {
-            let pg = match endpoints::get_pregame_match(&state.remote_client, &cfg, mid).await {
+            let mut pg = match endpoints::get_pregame_match(&state.remote_client, &cfg, mid).await {
                 RiotResult::Ok(v) => v,
                 RiotResult::NotFound => {
                     *state.match_cache.lock().await = None;
@@ -339,21 +339,21 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 Some("Red")  => Some("Blue".to_string()),
                 _            => pg["EnemyTeam"]["TeamID"].as_str().map(|s| s.to_string()),
             };
-            let mut players: Vec<Value> = Vec::new();
-            for p in pg["AllyTeam"]["Players"].as_array().into_iter().flatten() {
-                let mut p = p.clone();
+            let ally_tid = ally_team_id.as_deref().unwrap_or("Blue").to_string();
+            let enemy_tid = enemy_team_id.as_deref().unwrap_or("Red").to_string();
+            let mut players = pg["AllyTeam"]["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
+            for p in &mut players {
                 if p.get("TeamID").is_none() || p["TeamID"].is_null() {
-                    p["TeamID"] = serde_json::json!(ally_team_id.as_deref().unwrap_or("Blue"));
+                    p["TeamID"] = Value::String(ally_tid.clone());
                 }
-                players.push(p);
             }
-            for p in pg["EnemyTeam"]["Players"].as_array().into_iter().flatten() {
-                let mut p = p.clone();
+            let mut enemy_players = pg["EnemyTeam"]["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
+            for p in &mut enemy_players {
                 if p.get("TeamID").is_none() || p["TeamID"].is_null() {
-                    p["TeamID"] = serde_json::json!(enemy_team_id.as_deref().unwrap_or("Red"));
+                    p["TeamID"] = Value::String(enemy_tid.clone());
                 }
-                players.push(p);
             }
+            players.extend(enemy_players);
             (
                 mid.clone(),
                 "PREGAME".to_string(),
@@ -441,19 +441,19 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         })
         .buffer_unordered(MMR_CONCURRENCY);
 
-    let (names_raw, mmr_comp_list) = tokio::join!(
+    let (names_raw, mmr_comp_results): (Vec<Value>, HashMap<String, (Option<Value>, Option<Value>)>) = tokio::join!(
         endpoints::get_names_from_puuids(&state.remote_client, &cfg, &puuids),
-        mmr_stream.collect::<Vec<_>>()
+        mmr_stream.collect()
     );
 
-    let name_map: HashMap<String, Value> = names_raw.into_iter()
+    let name_map: HashMap<String, (String, String)> = names_raw.into_iter()
         .filter_map(|n| {
             let s = n["Subject"].as_str()?.to_string();
-            Some((s, n))
+            let name = n["GameName"].as_str().or_else(|| n["DisplayName"].as_str()).unwrap_or("").to_string();
+            let tag = n["TagLine"].as_str().unwrap_or("").to_string();
+            Some((s, (name, tag)))
         })
         .collect();
-
-    let mmr_comp_results: HashMap<String, (Option<Value>, Option<Value>)> = mmr_comp_list.into_iter().collect();
 
     // Build intermediate player data and collect recent match IDs
     struct RawPlayer {
@@ -545,12 +545,10 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             .unwrap_or("")
             .to_string();
         let identity = &p["PlayerIdentity"];
-        let name_entry = name_map.get(puuid);
-        let display_name = name_entry
-            .and_then(|n| n["GameName"].as_str().or_else(|| n["DisplayName"].as_str()))
-            .unwrap_or("")
-            .to_string();
-        let tag_line = name_entry.and_then(|n| n["TagLine"].as_str()).unwrap_or("").to_string();
+        let (display_name, tag_line) = match name_map.get(puuid) {
+            Some((name, tag)) => (name.clone(), tag.clone()),
+            None => (String::new(), String::new()),
+        };
         let team_id = p["TeamID"].as_str().unwrap_or("").to_string();
         let account_level = identity["AccountLevel"].as_u64().unwrap_or(0) as u32;
 
@@ -623,7 +621,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     }
 
     // 10. Collect Arc<Value> references under lock, then drop lock immediately (C1)
-    let (player_details_map, ordered_details): (HashMap<String, Vec<Arc<Value>>>, Vec<Arc<Value>>) = {
+    let (mut player_details_map, ordered_details): (HashMap<String, Vec<Arc<Value>>>, Vec<Arc<Value>>) = {
         let detail_cache = state.detail_cache.lock().await;
         let mut player_map = HashMap::new();
         let mut seen = HashSet::new();
@@ -647,7 +645,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     // Now detail_cache lock is released! Do CPU stats computation:
     let mut built_players: Vec<ValorantPlayer> = Vec::with_capacity(raw_built.len());
     for rp in raw_built {
-        let details = player_details_map.get(&rp.built.puuid).cloned().unwrap_or_default();
+        let details = player_details_map.remove(&rp.built.puuid).unwrap_or_default();
         let mut player = rp.built;
 
         if !details.is_empty() {

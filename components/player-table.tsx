@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
 import type { Player } from "@/lib/types";
 import { rankColor, RANK_NAMES_SHORT, rankIconUrl } from "@/lib/constants";
 import { openExternalUrl } from "@/lib/backend";
@@ -36,31 +36,16 @@ function avgTeamRank(players: Player[]): { avg: number; tier: number; name: stri
 }
 
 function ExpandCollapse({ open, children }: { open: boolean; children: React.ReactNode }) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(0);
-
-  const measure = useCallback(() => {
-    if (contentRef.current) {
-      setHeight(contentRef.current.scrollHeight);
-    }
-  }, []);
-
-  useEffect(() => {
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [open, measure]);
-
   return (
     <div
       style={{
-        maxHeight: open ? height : 0,
-        overflow: "hidden",
-        transition: "max-height 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease",
+        display: "grid",
+        gridTemplateRows: open ? "1fr" : "0fr",
+        transition: "grid-template-rows 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease",
         opacity: open ? 1 : 0,
       }}
     >
-      <div ref={contentRef}>{children}</div>
+      <div style={{ overflow: "hidden" }}>{children}</div>
     </div>
   );
 }
@@ -606,13 +591,16 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     );
   }
 
-  const blue = players.filter((p) => p.teamId === "Blue");
-  const red = players.filter((p) => p.teamId === "Red");
-  const selfTeam = players.find((p) => p.puuid === selfPuuid)?.teamId ?? "Blue";
-  const my = selfTeam === "Blue" ? blue : red;
-  const enemy = selfTeam === "Blue" ? red : blue;
-  const myColor = selfTeam === "Blue" ? "var(--blue)" : "var(--red)";
-  const enemyColor = selfTeam === "Blue" ? "var(--red)" : "var(--blue)";
+  const { my, enemy, myColor, enemyColor } = useMemo(() => {
+    const blue = players.filter((p) => p.teamId === "Blue");
+    const red = players.filter((p) => p.teamId === "Red");
+    const selfTeam = players.find((p) => p.puuid === selfPuuid)?.teamId ?? "Blue";
+    const my = selfTeam === "Blue" ? blue : red;
+    const enemy = selfTeam === "Blue" ? red : blue;
+    const myColor = selfTeam === "Blue" ? "var(--blue)" : "var(--red)";
+    const enemyColor = selfTeam === "Blue" ? "var(--red)" : "var(--blue)";
+    return { my, enemy, myColor, enemyColor };
+  }, [players, selfPuuid]);
 
   const playerBadges = useMemo(() => {
     const badges = new Map<string, BadgeType[]>();

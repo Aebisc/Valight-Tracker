@@ -150,37 +150,39 @@ pub async fn extract_log_metadata() -> (String, String) {
         }
     };
 
-    use tokio::io::AsyncReadExt;
+    use tokio::io::AsyncBufReadExt;
     let mut reader = tokio::io::BufReader::new(file);
-    let chunk_size = 64 * 1024usize;
     let max_bytes = 512 * 1024usize;
-    let mut accumulated = String::new();
     let mut total_read = 0usize;
-    let mut buf = vec![0u8; chunk_size];
+    let mut line = String::new();
 
-    loop {
-        if total_read >= max_bytes { break; }
-        let n = match reader.read(&mut buf).await {
+    while total_read < max_bytes {
+        line.clear();
+        match reader.read_line(&mut line).await {
             Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => { tracing::warn!("Log read error: {}", e); break; }
-        };
-        total_read += n;
-        accumulated.push_str(&String::from_utf8_lossy(&buf[..n]));
-
-        if !region_found {
-            if let Some(cap) = GLZ_RE.captures(&accumulated) {
-                region = cap[1].to_string();
-                region_found = true;
+            Ok(n) => {
+                total_read += n;
+                if !region_found {
+                    if let Some(cap) = GLZ_RE.captures(&line) {
+                        region = cap[1].to_string();
+                        region_found = true;
+                    }
+                }
+                if !version_found {
+                    if let Some(cap) = VER_RE.captures(&line) {
+                        version = cap[1].to_string();
+                        version_found = true;
+                    }
+                }
+                if region_found && version_found {
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Log read error: {}", e);
+                break;
             }
         }
-        if !version_found {
-            if let Some(cap) = VER_RE.captures(&accumulated) {
-                version = cap[1].to_string();
-                version_found = true;
-            }
-        }
-        if region_found && version_found { break; }
     }
 
     (region, version)

@@ -46,6 +46,29 @@ function useElapsedTimer(startTime?: number): string | null {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function TimerDisplay({ startTime }: { startTime?: number }) {
+  const timerDisplay = useElapsedTimer(startTime);
+  if (!timerDisplay) return null;
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-mono, monospace)",
+        fontSize: 11,
+        color: "var(--ink-dim)",
+        opacity: 0.7,
+        marginLeft: 2,
+        fontVariantNumeric: "tabular-nums",
+        padding: "2px 10px",
+        borderRadius: "var(--radius-sm)",
+        background: "rgba(var(--accent-raw), 0.06)",
+        border: "1px solid rgba(var(--accent-raw), 0.12)",
+      }}
+    >
+      {timerDisplay}
+    </span>
+  );
+}
+
 interface MatchHeaderProps {
   matchInfo: MatchInfo;
   gameState: GameState;
@@ -59,7 +82,6 @@ const tagTransition = "all 0.2s ease";
 export default function MatchHeader({ matchInfo, gameState, onRefresh, refreshing, stateStartTime }: MatchHeaderProps) {
   const live = gameState === "INGAME";
   const showTimer = gameState === "PREGAME" || gameState === "INGAME";
-  const timerDisplay = useElapsedTimer(showTimer ? stateStartTime : undefined);
   return (
     <div
       className="a-enter"
@@ -145,22 +167,7 @@ export default function MatchHeader({ matchInfo, gameState, onRefresh, refreshin
           <span style={{ color: live ? "var(--up)" : "var(--warn)", transition: "color 0.2s ease" }}>
             {live ? "Live" : "Agent Select"}
           </span>
-          {timerDisplay && (
-            <span style={{
-              fontFamily: "var(--font-mono, monospace)",
-              fontSize: 11,
-              color: "var(--ink-dim)",
-              opacity: 0.7,
-              marginLeft: 2,
-              fontVariantNumeric: "tabular-nums",
-              padding: "2px 10px",
-              borderRadius: "var(--radius-sm)",
-              background: "rgba(var(--accent-raw), 0.06)",
-              border: "1px solid rgba(var(--accent-raw), 0.12)",
-            }}>
-              {timerDisplay}
-            </span>
-          )}
+          {showTimer && <TimerDisplay startTime={stateStartTime} />}
         </span>
 
         {gameState === "PREGAME" && matchInfo?.startingSide && (
