@@ -219,6 +219,7 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
                 href={`https://tracker.gg/valorant/profile/riot/${encodeURIComponent(p.name)}%23${encodeURIComponent(p.tag)}/overview`}
                 target="_blank"
                 rel="noopener noreferrer"
+                tabIndex={-1}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -369,11 +370,11 @@ function areRowPropsEqual(prev: RowProps, next: RowProps): boolean {
     p1.accountLevel === p2.accountLevel &&
     p1.isCurrentActRank === p2.isCurrentActRank &&
     p1.currentSeasonWins === p2.currentSeasonWins &&
-    p1.currentSeasonGames === p2.currentSeasonGames &&
+    p1.teamId === p2.teamId &&
     p1.lastMatchKills === p2.lastMatchKills &&
     p1.lastMatchDeaths === p2.lastMatchDeaths &&
     p1.lastMatchAssists === p2.lastMatchAssists &&
-    (p1.lastMatchKD === p2.lastMatchKD || p1.lastMatchKd === p2.lastMatchKd)
+    p1.lastMatchKD === p2.lastMatchKD
   );
 }
 
@@ -386,7 +387,7 @@ function ExpandedRow({ p }: {
   const hsPct = totalShots > 0 ? (p.headshots / totalShots * 100) : 0;
   const bsPct = totalShots > 0 ? (p.bodyshots / totalShots * 100) : 0;
   const lsPct = totalShots > 0 ? (p.legshots / totalShots * 100) : 0;
-  const lastKd = p.lastMatchKD ?? p.lastMatchKd ?? 0;
+  const lastKd = p.lastMatchKD ?? 0;
 
   const detailRowStyle: React.CSSProperties = {
     display: "flex",
@@ -422,7 +423,7 @@ function ExpandedRow({ p }: {
             <div style={{ display: "flex", gap: 5, marginTop: 10 }}>
               {p.recentResults.map((r, i) => (
                 <div
-                  key={i}
+                  key={`${i}-${r}`}
                   title={r === "W" ? "Win" : r === "L" ? "Loss" : "Draw"}
                   style={{
                     width: 22,

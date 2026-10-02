@@ -5,7 +5,7 @@
   "identifier": "com.aebisc.valoranttracker",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://127.0.0.1:3000",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../out"
   },
@@ -14,13 +14,19 @@
       {
         "label": "main",
         "title": "VaLight Tracker",
+        "url": "index.html",
         "width": 1100,
         "height": 760,
         "minWidth": 820,
         "minHeight": 560,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "visible": true,
+        "focusable": true,
+        "center": true
       }
+
+
     ],
     "security": {
       "csp": null

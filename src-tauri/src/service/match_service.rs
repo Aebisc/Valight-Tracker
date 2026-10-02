@@ -30,6 +30,7 @@ use crate::service::{player, stats, party, side};
 
 const RECENT_GAMES_COUNT: u32 = 20;
 const DETAIL_CONCURRENCY: usize = 10;
+const MMR_CONCURRENCY: usize = 4;
 
 // ─── Data maps (loaded once at startup) ───────────────────────────────────────
 
@@ -438,7 +439,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 (puuid, (mmr, comp))
             }
         })
-        .buffer_unordered(DETAIL_CONCURRENCY);
+        .buffer_unordered(MMR_CONCURRENCY);
 
     let (names_raw, mmr_comp_list) = tokio::join!(
         endpoints::get_names_from_puuids(&state.remote_client, &cfg, &puuids),
@@ -508,7 +509,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         let current_season_games = current_season_data
             .and_then(|d| d["NumberOfGames"].as_u64())
             .unwrap_or(0) as u32;
-        let is_current_act_rank = current_season.is_some() && (current_season_wins + current_season_games) > 0;
+        let is_current_act_rank = current_season.is_some() && current_season_games > 0;
         let act_winrate = if current_season_games > 0 {
             player::round_pct(current_season_wins as f64 / current_season_games as f64)
         } else { 0.0 };
@@ -669,8 +670,8 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 .map(|d| stats::get_match_result(d, &player.puuid))
                 .collect();
 
-            // Aggregated stats from details (no deep-cloning)
-            let agg = stats::aggregate_player_stats(&details, &player.puuid);
+            // Aggregated stats from precomputed details (no re-parsing match details)
+            let agg = stats::aggregate_player_stats_from_extracted(&player_stats_list);
             player.kills = agg.kills;
             player.deaths = agg.deaths;
             player.assists = agg.assists;

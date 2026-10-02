@@ -127,45 +127,58 @@ pub async fn safe_get_json(
     }
 }
 
-/// Helper: PUT a URL with a JSON body, returning RiotResult.
+/// Helper: PUT a URL with a JSON body, returning RiotResult with 429 retry support.
 pub async fn safe_put_json(
     client: &Client,
     url: &str,
     headers: &reqwest::header::HeaderMap,
     body: &Value,
 ) -> RiotResult<Value> {
-    let res = match client.put(url).headers(headers.clone()).json(body).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("safe_put_json send error for {}: {}", url, e);
-            return RiotResult::Transient(e.to_string());
+    let mut retries = 0;
+    loop {
+        let res = match client.put(url).headers(headers.clone()).json(body).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("safe_put_json send error for {}: {}", url, e);
+                return RiotResult::Transient(e.to_string());
+            }
+        };
+
+        let status = res.status();
+        if status == StatusCode::NOT_FOUND {
+            return RiotResult::NotFound;
         }
-    };
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return RiotResult::Unauthorized;
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            let retry_after_dur = res
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(Duration::from_secs);
 
-    let status = res.status();
-    if status == StatusCode::NOT_FOUND {
-        return RiotResult::NotFound;
-    }
-    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return RiotResult::Unauthorized;
-    }
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after_dur = res
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .map(Duration::from_secs);
-        return RiotResult::RateLimited { retry_after: retry_after_dur };
-    }
-    if !status.is_success() {
-        tracing::warn!("safe_put_json: {} returned {}", url, status);
-        return RiotResult::Transient(format!("HTTP {}", status));
-    }
+            if retries < MAX_RATE_LIMIT_RETRIES {
+                retries += 1;
+                let wait = retry_after_dur
+                    .unwrap_or(Duration::from_secs(1))
+                    .min(Duration::from_secs(MAX_RATE_LIMIT_WAIT_SECS));
+                tracing::warn!("429 Rate limited on PUT {}, retrying after {:?}", url, wait);
+                tokio::time::sleep(wait).await;
+                continue;
+            }
+            return RiotResult::RateLimited { retry_after: retry_after_dur };
+        }
+        if !status.is_success() {
+            tracing::warn!("safe_put_json: {} returned {}", url, status);
+            return RiotResult::Transient(format!("HTTP {}", status));
+        }
 
-    match res.json().await {
-        Ok(val) => RiotResult::Ok(val),
-        Err(e) => RiotResult::Transient(e.to_string()),
+        match res.json().await {
+            Ok(val) => return RiotResult::Ok(val),
+            Err(e) => return RiotResult::Transient(e.to_string()),
+        }
     }
 }
 

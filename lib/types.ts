@@ -33,7 +33,6 @@ export interface ValorantPlayer {
   lastMatchDeaths: number;
   lastMatchAssists: number;
   lastMatchKD: number;
-  lastMatchKd?: number;
   /** Up to 5 most recent competitive match outcomes, newest first. */
   recentResults: ("W" | "L" | "D")[];
   partyId?: string;
@@ -41,6 +40,8 @@ export interface ValorantPlayer {
   partyNumber?: number;
   partySize?: number;
 }
+
+export type GameState = "PREGAME" | "INGAME" | "MENUS" | "OFFLINE" | "ERROR";
 
 export type TeamSide = "attack" | "defence" | null;
 
@@ -54,7 +55,7 @@ export interface MatchInfo {
   isDeathmatch: boolean;
   server: string;
   isRanked: boolean;
-  gameState: string;
+  gameState: GameState;
   seasonId: string;
   startingSide?: TeamSide;
 }
@@ -62,7 +63,7 @@ export interface MatchInfo {
 export type Player = ValorantPlayer;
 
 export interface ApiResponse {
-  gameState: string;
+  gameState: GameState;
   error?: string;
   match?: MatchInfo;
   players?: Player[];

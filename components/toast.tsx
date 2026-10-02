@@ -36,18 +36,11 @@ const MAX_TOASTS = 3;
 const AUTO_DISMISS_MS = 4000;
 const EXIT_DURATION_MS = 300;
 
-const BORDER_COLORS: Record<ToastType, string> = {
+const TOAST_COLORS: Record<ToastType, string> = {
   success: "var(--green, #34d399)",
   error: "var(--red, #e87d7d)",
   warning: "var(--amber, #fbbf24)",
-  info: "var(--accent, #ff4655)",
-};
-
-const PROGRESS_COLORS: Record<ToastType, string> = {
-  success: "var(--green, #34d399)",
-  error: "var(--red, #e87d7d)",
-  warning: "var(--amber, #fbbf24)",
-  info: "var(--accent, #ff4655)",
+  info: "var(--accent, #6366f1)",
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -87,7 +80,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         const active = next.filter((t) => !t.exiting);
         if (active.length > MAX_TOASTS) {
           const oldest = active[0];
-          oldest.exiting = true;
           const oldTimer = timersRef.current.get(oldest.id);
           if (oldTimer) {
             clearTimeout(oldTimer);
@@ -98,6 +90,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             timersRef.current.delete(-oldest.id);
           }, EXIT_DURATION_MS);
           timersRef.current.set(-oldest.id, evictTimer);
+          return next.map((t) => (t.id === oldest.id ? { ...t, exiting: true } : t));
         }
         return next;
       });
@@ -131,14 +124,12 @@ function ToastContainer({
         position: "fixed",
         bottom: 20,
         right: 20,
-        zIndex: "var(--z-toast, 200)" as unknown as number,
+        zIndex: "var(--z-toast, 200)",
         display: "flex",
         flexDirection: "column",
         gap: 8,
         pointerEvents: "none",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
       }}
     >
       {toasts.map((t) => (
@@ -162,8 +153,7 @@ function ToastCard({
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const borderColor = BORDER_COLORS[t.type];
-  const progressColor = PROGRESS_COLORS[t.type];
+  const toastColor = TOAST_COLORS[t.type];
 
   return (
     <div
@@ -179,7 +169,7 @@ function ToastCard({
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
         border: "1px solid var(--border, rgba(255,255,255,0.07))",
-        borderLeft: `3px solid ${borderColor}`,
+        borderLeft: `3px solid ${toastColor}`,
         borderRadius: "var(--radius-lg)",
         boxShadow:
           "0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)",
@@ -270,7 +260,7 @@ function ToastCard({
         <div
           style={{
             height: "100%",
-            background: progressColor,
+            background: toastColor,
             opacity: 0.5,
             borderRadius: 1,
             animation: mounted && !t.exiting

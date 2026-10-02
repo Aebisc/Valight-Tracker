@@ -99,7 +99,10 @@ pub fn enrich_party_from_match_history<T: std::borrow::Borrow<Value>>(
     players: &mut [ValorantPlayer],
     match_details: &[T],
 ) {
-    let lobby_puuids: std::collections::HashSet<String> = players.iter().map(|p| p.puuid.clone()).collect();
+    let mut player_map: HashMap<String, &mut ValorantPlayer> = players
+        .iter_mut()
+        .map(|p| (p.puuid.clone(), p))
+        .collect();
 
     for detail in match_details {
         let detail_val: &Value = detail.borrow();
@@ -116,7 +119,7 @@ pub fn enrich_party_from_match_history<T: std::borrow::Borrow<Value>>(
             let party_id = mp["partyId"].as_str()
                 .or_else(|| mp["PartyID"].as_str())
                 .unwrap_or("");
-            if puuid.is_empty() || party_id.is_empty() || !lobby_puuids.contains(puuid) {
+            if puuid.is_empty() || party_id.is_empty() || !player_map.contains_key(puuid) {
                 continue;
             }
             party_groups.entry(party_id.to_string()).or_default().push(puuid.to_string());
@@ -125,7 +128,7 @@ pub fn enrich_party_from_match_history<T: std::borrow::Borrow<Value>>(
         for (party_id, members) in party_groups {
             if members.len() < 2 { continue; }
             for puuid in members.iter() {
-                if let Some(player) = players.iter_mut().find(|p| &p.puuid == puuid) {
+                if let Some(player) = player_map.get_mut(puuid) {
                     if player.party_id.is_none() {
                         player.party_id = Some(party_id.clone());
                         player.party_size = Some(members.len() as u32);
@@ -161,9 +164,10 @@ pub fn parse_presences(raw: &Value) -> HashMap<String, PresenceInfo> {
             .to_string();
         if puuid.is_empty() { continue; }
 
-        // Skip non-Valorant products
-        if let Some(product) = p["product"].as_str() {
-            if product != "valorant" { continue; }
+        // Only process Valorant presences
+        match p["product"].as_str() {
+            Some("valorant") => {}
+            _ => continue,
         }
 
         let private_b64 = match p["private"].as_str() {

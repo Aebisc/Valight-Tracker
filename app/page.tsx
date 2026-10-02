@@ -33,8 +33,6 @@ export default function Home() {
     ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "--:--:--";
 
-  const inMatch = gameState === "PREGAME" || gameState === "INGAME";
-
   return (
     <div className="min-h-screen flex flex-col">
       <div style={{

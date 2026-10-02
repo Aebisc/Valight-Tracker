@@ -45,6 +45,7 @@
   --font-mono: var(--mono);
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -320,6 +321,7 @@ a, button, [role="button"], input, select, textarea {
 @keyframes toast-progress { from { width: 100%; } to { width: 0%; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
 
@@ -387,6 +389,7 @@ html.light .status-bar-bg {
     animation: none; opacity: 1; transform: none;
   }
   .a-pulse, .a-spin { animation: none; }
+  .a-dots::after { animation: none; content: "..."; }
 }
 
 

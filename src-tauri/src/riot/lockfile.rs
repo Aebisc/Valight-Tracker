@@ -27,6 +27,7 @@ pub enum LockfileError {
 }
 
 pub fn local_app_data() -> Result<PathBuf, LockfileError> {
+    #[cfg(test)]
     if let Ok(override_path) = std::env::var("VALIGHT_LOCALAPPDATA") {
         if !override_path.is_empty() {
             return Ok(PathBuf::from(override_path));

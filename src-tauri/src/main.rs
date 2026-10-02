@@ -31,6 +31,14 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![commands::get_match])
+        .setup(|app| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running VaLight Tracker");
 }

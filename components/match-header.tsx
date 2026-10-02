@@ -1,23 +1,43 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { MatchInfo } from "@/lib/types";
+import type { MatchInfo, GameState } from "@/lib/types";
 
 function useElapsedTimer(startTime?: number): string | null {
-  const [elapsed, setElapsed] = useState<number>(0);
+  const [elapsed, setElapsed] = useState<number>(() =>
+    startTime ? Math.max(0, Math.floor((Date.now() - startTime) / 1000)) : 0
+  );
 
   useEffect(() => {
     if (!startTime) {
       setElapsed(0);
       return;
     }
-    setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
 
-    const id = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id) clearInterval(id);
+      id = setInterval(() => {
+        if (!document.hidden) {
+          setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
+        }
+      }, 1000);
+    };
 
-    return () => clearInterval(id);
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
+      }
+    };
+
+    start();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (id) clearInterval(id);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [startTime]);
 
   if (!startTime) return null;
@@ -28,7 +48,7 @@ function useElapsedTimer(startTime?: number): string | null {
 
 interface MatchHeaderProps {
   matchInfo: MatchInfo;
-  gameState: string;
+  gameState: GameState;
   onRefresh: () => void;
   refreshing: boolean;
   stateStartTime?: number;

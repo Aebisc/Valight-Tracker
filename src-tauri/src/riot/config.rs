@@ -28,7 +28,11 @@ fn region_config(region: &str) -> &'static RegionEndpoints {
     static BR: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-br-1.na.a.pvp.net", shard: "na" };
     static LATAM: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-latam-1.na.a.pvp.net", shard: "na" };
     match region {
-        "eu" => &EU, "ap" => &AP, "kr" => &KR, "br" => &BR, "latam" => &LATAM, _ => &NA,
+        "eu" => &EU, "ap" => &AP, "kr" => &KR, "br" => &BR, "latam" => &LATAM, "na" => &NA,
+        other => {
+            tracing::warn!("Unknown region '{}', defaulting to NA endpoints", other);
+            &NA
+        }
     }
 }
 
@@ -98,17 +102,21 @@ pub fn parse_jwt_exp(token: &str) -> Option<u64> {
 
 // ─── Log parsing ──────────────────────────────────────────────────────────────
 
-pub fn parse_log_metadata_from_str(content: &str) -> (String, String) {
-    let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
-    let ver_re = regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap();
+static GLZ_RE: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap()
+});
+static VER_RE: Lazy<regex::Regex> = Lazy::new(|| {
+    regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap()
+});
 
+pub fn parse_log_metadata_from_str(content: &str) -> (String, String) {
     let mut region = "na".to_string();
     let mut version = "unknown".to_string();
 
-    if let Some(cap) = glz_re.captures(content) {
+    if let Some(cap) = GLZ_RE.captures(content) {
         region = cap[1].to_string();
     }
-    if let Some(cap) = ver_re.captures(content) {
+    if let Some(cap) = VER_RE.captures(content) {
         version = cap[1].to_string();
     }
 
@@ -131,6 +139,8 @@ pub async fn extract_log_metadata() -> (String, String) {
 
     let mut region = "na".to_string();
     let mut version = "unknown".to_string();
+    let mut region_found = false;
+    let mut version_found = false;
 
     let file = match tokio::fs::File::open(&log_path).await {
         Ok(f) => f,
@@ -148,9 +158,6 @@ pub async fn extract_log_metadata() -> (String, String) {
     let mut total_read = 0usize;
     let mut buf = vec![0u8; chunk_size];
 
-    let glz_re = regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap();
-    let ver_re = regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap();
-
     loop {
         if total_read >= max_bytes { break; }
         let n = match reader.read(&mut buf).await {
@@ -161,17 +168,19 @@ pub async fn extract_log_metadata() -> (String, String) {
         total_read += n;
         accumulated.push_str(&String::from_utf8_lossy(&buf[..n]));
 
-        if region == "na" {
-            if let Some(cap) = glz_re.captures(&accumulated) {
+        if !region_found {
+            if let Some(cap) = GLZ_RE.captures(&accumulated) {
                 region = cap[1].to_string();
+                region_found = true;
             }
         }
-        if version == "unknown" {
-            if let Some(cap) = ver_re.captures(&accumulated) {
+        if !version_found {
+            if let Some(cap) = VER_RE.captures(&accumulated) {
                 version = cap[1].to_string();
+                version_found = true;
             }
         }
-        if region != "na" && version != "unknown" { break; }
+        if region_found && version_found { break; }
     }
 
     (region, version)

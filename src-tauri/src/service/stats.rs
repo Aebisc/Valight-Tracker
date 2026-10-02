@@ -29,12 +29,6 @@ pub struct PlayerStats {
 
 /// Port of extractPlayerStats(). Uses safe accessors throughout.
 pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
-    let _empty = PlayerStats {
-        kills: 0, deaths: 0, assists: 0, kd: 0.0,
-        headshots: 0, bodyshots: 0, legshots: 0, headshot_percent: 0.0,
-        winrate: 0.0, acs: 0, adr: 0.0, won: false,
-    };
-
     // Find the player entry — Riot uses lowercase 'subject' in match details
     let player_stats = match match_detail["players"].as_array() {
         Some(arr) => arr.iter().find(|p| {
@@ -43,7 +37,7 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         None => None,
     };
 
-    let stats_node = player_stats.and_then(|p| Some(&p["stats"]));
+    let stats_node = player_stats.map(|p| &p["stats"]);
     let kills = stats_node.and_then(|s| s["kills"].as_u64()).unwrap_or(0) as u32;
     let deaths = stats_node.and_then(|s| s["deaths"].as_u64()).unwrap_or(0) as u32;
     let assists = stats_node.and_then(|s| s["assists"].as_u64()).unwrap_or(0) as u32;
@@ -176,16 +170,15 @@ pub struct AggregatedStats {
     pub recent_games_count: u32,
 }
 
-/// Port of aggregatePlayerStats(). Averages stats across N matches.
-pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
-    match_details: &[T],
-    puuid: &str,
-) -> AggregatedStats {
+/// Averages stats across pre-extracted PlayerStats without re-parsing match details.
+pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> AggregatedStats {
     let zero = AggregatedStats {
         kills: 0.0, deaths: 0.0, assists: 0.0, kd: 0.0,
         headshots: 0, bodyshots: 0, legshots: 0, headshot_percent: 0.0,
         winrate: 0.0, acs: 0, adr: 0.0, recent_games_count: 0,
     };
+
+    if player_stats.is_empty() { return zero; }
 
     let mut sum_kills = 0u32;
     let mut sum_deaths = 0u32;
@@ -196,25 +189,20 @@ pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
     let mut sum_acs = 0u64;
     let mut sum_adr = 0.0f64;
     let mut wins = 0u32;
-    let mut counted = 0u32;
 
-    for detail in match_details {
-        let s = extract_player_stats(detail.borrow(), puuid);
-        sum_kills    += s.kills;
-        sum_deaths   += s.deaths;
-        sum_assists  += s.assists;
+    for s in player_stats {
+        sum_kills     += s.kills;
+        sum_deaths    += s.deaths;
+        sum_assists   += s.assists;
         sum_headshots += s.headshots;
         sum_bodyshots += s.bodyshots;
         sum_legshots  += s.legshots;
-        sum_acs      += s.acs as u64;
-        sum_adr      += s.adr;
+        sum_acs       += s.acs as u64;
+        sum_adr       += s.adr;
         if s.won { wins += 1; }
-        counted += 1;
     }
 
-    if counted == 0 { return zero; }
-
-    let n = counted as f64;
+    let n = player_stats.len() as f64;
     let kd = if sum_deaths > 0 { round2(sum_kills as f64 / sum_deaths as f64) } else { sum_kills as f64 };
     let total_shots = sum_headshots + sum_bodyshots + sum_legshots;
     let headshot_percent = if total_shots > 0 {
@@ -233,8 +221,20 @@ pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
         winrate:   round_pct(wins as f64 / n),
         acs:       (sum_acs as f64 / n).round() as u32,
         adr:       round1(sum_adr / n),
-        recent_games_count: counted,
+        recent_games_count: player_stats.len() as u32,
     }
+}
+
+/// Port of aggregatePlayerStats(). Averages stats across N matches.
+pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
+    match_details: &[T],
+    puuid: &str,
+) -> AggregatedStats {
+    let extracted: Vec<PlayerStats> = match_details
+        .iter()
+        .map(|d| extract_player_stats(d.borrow(), puuid))
+        .collect();
+    aggregate_player_stats_from_extracted(&extracted)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

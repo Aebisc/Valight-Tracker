@@ -15,6 +15,10 @@ export function isTauri(): boolean {
  * Opens an external URL in the default browser safely in both Tauri and web contexts.
  */
 export async function openExternalUrl(url: string): Promise<void> {
+  if (!url.startsWith("https://")) {
+    console.warn("[backend:openExternalUrl] blocked non-https URL:", url);
+    return;
+  }
   if (isTauri()) {
     try {
       await openUrl(url);
@@ -32,14 +36,15 @@ export async function openExternalUrl(url: string): Promise<void> {
 export async function fetchMatchData(force = false): Promise<ApiResponse> {
   if (isTauri()) {
     try {
-      return await invoke<ApiResponse>("get_match", { force });
-    } catch (err: any) {
+      const res = await invoke<ApiResponse>("get_match", { force });
+      if (res.gameState === "ERROR") {
+        throw new Error(res.error || "Internal error from Valorant service");
+      }
+      return res;
+    } catch (err: unknown) {
       console.error("[backend:invoke] failed to get_match:", err);
-      const message = typeof err === "object" && err !== null && "message" in err ? String(err.message) : String(err);
-      return {
-        gameState: "ERROR",
-        error: message,
-      };
+      const message = typeof err === "object" && err !== null && "message" in err ? String((err as { message: unknown }).message) : String(err);
+      throw new Error(message);
     }
 
   }
