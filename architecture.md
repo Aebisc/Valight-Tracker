@@ -106,19 +106,29 @@ To communicate with Riot services without requiring user credentials:
 
 ### 3.3 State Detection & Orchestration (`service/match_service.rs`)
 When `get_match(force)` is invoked:
-1. **State Detection (`detect_state`):**
-   - Polls `/core-game/v1/players/{puuid}` to detect active live matches (`INGAME`).
-   - If not found (404), polls `/pregame/v1/players/{puuid}` to detect agent select lobbies (`PREGAME`).
-   - If neither is active, sets state to `MENUS`.
-2. **Fast-Path Caching:**
+1. **Single-Flight Lock & Generation Tracking (`AppState::build_lock`):**
+   - Concurrent requests acquire an async build lock. If a build is already in progress, overlapping requests wait on the in-flight build and return its result, completely eliminating duplicate network and compute bursts.
+2. **State Detection (`detect_state`):**
+   - Utilizes previous state hints (`last_state`) to query with optimal priority:
+     - Steady-state `INGAME`: Queries `/core-game/v1/players/{puuid}` first (1 GLZ request on hit).
+     - Steady-state `PREGAME`: Queries `/pregame/v1/players/{puuid}` first (1 GLZ request on hit).
+     - Menus or transitions: Queries both endpoints and resolves with priority `INGAME` > `PREGAME` > `MENUS`.
+3. **Pregame Cache Hit (Agent Select Updates):**
+   - While in `PREGAME`, polling fetches the lightweight pregame match payload to update newly locked or hovered agents (`CharacterID`), completely bypassing player stats, MMR, and match history re-fetches.
+4. **Pregame → Ingame Transition Optimization:**
+   - When transitioning from `PREGAME` to `INGAME` on the same map:
+     - Teammate stats (Rank, Peak Rank, RR, KD, ACS, ADR, HS%, recent results) already computed during Agent Select are preserved.
+     - Only the 5 newly revealed enemy players are queried from Riot's remote endpoints (`/mmr/`, `/competitiveupdates`, `/name-service/`).
+     - Agent IDs and account levels are updated from coregame.
+     - Match detail fetching and stats computation are skipped for teammates (0 match detail fetches for teammates).
+     - Party detection (`party::assign_party_numbers`) re-evaluates all 10 players to assign per-team party numbers.
+5. **Fast-Path Ingame Caching:**
    - If the player is already `INGAME` and the match ID matches the in-memory cache, returns cached match details instantly (0 remote queries).
-   - If in `PREGAME`, updates newly locked agent selections while preserving calculated stats.
-3. **Concurrent Data Aggregation:**
-   - Gathers player PUUIDs.
+6. **Concurrent Data Aggregation (New Players):**
    - Fires concurrent asynchronous streams using `tokio::join!`:
-     - Batch name lookup (`/name-service/v2/players`).
-     - MMR (`/mmr/v1/players/{puuid}`) & Competitive updates (`/competitiveupdates`).
-     - Local Riot Client presences for party detection (`/chat/v4/presences`).
+     - Batch name lookup (`/name-service/v2/players`) guarded against empty PUUID sets.
+     - MMR (`/mmr/v1/players/{puuid}`) & Competitive updates (`/competitiveupdates`) with bounded concurrency.
+     - Local Riot Client presences for live party detection (`/chat/v4/presences`).
 
 ### 3.4 Two-Tier Cache Architecture (`service/disk_cache.rs`)
 To prevent hitting Riot PD rate limits (~20 req/s):
@@ -159,6 +169,12 @@ The UI drives data collection through an adaptive polling interval engine:
 - **`INGAME` (Live Game):** Polls every **8 seconds** (serviced instantly via backend RAM cache).
 - **Background Throttling:** Detects browser / window visibility via `document.visibilitychange`. Halts polling when minimized or alt-tabbed to 0% CPU consumption; immediately polls once when restored.
 - **Exponential Backoff:** If the game client closes or encounters connection failures, enters a reconnect state and triggers warning toasts.
+- **Refresh vs. Refetch UI Controls:**
+  - **`refreshMatch()` ("Refresh" button):** Manual fast poll (`force = false`) — instantly re-checks game state and updates agent picks without clearing caches or re-querying player stats.
+  - **`hardRefreshMatch()` ("Refetch" button):** Full manual rebuild (`force = true`) — invalidates match and config caches and forces a complete fresh query of all 10 players from the Riot API.
+- **Request Guarding & Structural Sharing (`lib/share-structure.ts`):**
+  - **Sequence Guard:** Ignores out-of-order or late-arriving responses when a newer manual or automated request finishes first.
+  - **Structural Sharing:** Reuses existing player object and array references when backend responses contain identical data, eliminating spurious React re-renders.
 
 ### 4.2 Interactive Player Table (`components/player-table.tsx`)
 - **Row Memoization:** `<MemoizedRow>` and `<MemoizedTeam>` components prevent re-rendering unaffected players when expanding rows or updating timers.
