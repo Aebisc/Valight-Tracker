@@ -64,5 +64,6 @@ Thumbs.db
 *.key
 latest.json
 
-# Test fixtures — raw/ has live Riot tokens, NEVER commit
-src-tauri/fixtures/raw/
+# Test fixtures & mocks
+src-tauri/fixtures/
+tests/
