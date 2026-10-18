@@ -4,13 +4,13 @@
 // Reads entitlements from the Riot local client and region/version from
 // ShooterGame.log. Caches the result until force=true or a 401/403 clears it.
 
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use tokio::sync::Mutex;
-use thiserror::Error;
 use once_cell::sync::Lazy;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use thiserror::Error;
+use tokio::sync::Mutex;
 
-use super::lockfile::Lockfile;
 use super::client::build_local_client;
+use super::lockfile::Lockfile;
 
 // ─── Region config ────────────────────────────────────────────────────────────
 
@@ -21,14 +21,43 @@ struct RegionEndpoints {
 }
 
 fn region_config(region: &str) -> &'static RegionEndpoints {
-    static NA: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-na-1.na.a.pvp.net", shard: "na" };
-    static EU: RegionEndpoints = RegionEndpoints { pd: "https://pd.eu.a.pvp.net", glz: "https://glz-eu-1.eu.a.pvp.net", shard: "eu" };
-    static AP: RegionEndpoints = RegionEndpoints { pd: "https://pd.ap.a.pvp.net", glz: "https://glz-ap-1.ap.a.pvp.net", shard: "ap" };
-    static KR: RegionEndpoints = RegionEndpoints { pd: "https://pd.kr.a.pvp.net", glz: "https://glz-kr-1.kr.a.pvp.net", shard: "kr" };
-    static BR: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-br-1.na.a.pvp.net", shard: "na" };
-    static LATAM: RegionEndpoints = RegionEndpoints { pd: "https://pd.na.a.pvp.net", glz: "https://glz-latam-1.na.a.pvp.net", shard: "na" };
+    static NA: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.na.a.pvp.net",
+        glz: "https://glz-na-1.na.a.pvp.net",
+        shard: "na",
+    };
+    static EU: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.eu.a.pvp.net",
+        glz: "https://glz-eu-1.eu.a.pvp.net",
+        shard: "eu",
+    };
+    static AP: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.ap.a.pvp.net",
+        glz: "https://glz-ap-1.ap.a.pvp.net",
+        shard: "ap",
+    };
+    static KR: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.kr.a.pvp.net",
+        glz: "https://glz-kr-1.kr.a.pvp.net",
+        shard: "kr",
+    };
+    static BR: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.na.a.pvp.net",
+        glz: "https://glz-br-1.na.a.pvp.net",
+        shard: "na",
+    };
+    static LATAM: RegionEndpoints = RegionEndpoints {
+        pd: "https://pd.na.a.pvp.net",
+        glz: "https://glz-latam-1.na.a.pvp.net",
+        shard: "na",
+    };
     match region {
-        "eu" => &EU, "ap" => &AP, "kr" => &KR, "br" => &BR, "latam" => &LATAM, "na" => &NA,
+        "eu" => &EU,
+        "ap" => &AP,
+        "kr" => &KR,
+        "br" => &BR,
+        "latam" => &LATAM,
+        "na" => &NA,
         other => {
             tracing::warn!("Unknown region '{}', defaulting to NA endpoints", other);
             &NA
@@ -102,12 +131,10 @@ pub fn parse_jwt_exp(token: &str) -> Option<u64> {
 
 // ─── Log parsing ──────────────────────────────────────────────────────────────
 
-static GLZ_RE: Lazy<regex::Regex> = Lazy::new(|| {
-    regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap()
-});
-static VER_RE: Lazy<regex::Regex> = Lazy::new(|| {
-    regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap()
-});
+static GLZ_RE: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r"https://glz-([a-z]+)-\d+\.([a-z]+)\.a\.pvp\.net").unwrap());
+static VER_RE: Lazy<regex::Regex> =
+    Lazy::new(|| regex::Regex::new(r"release-(\d+\.\d+-shipping-\d+-\d+)").unwrap());
 
 pub fn parse_log_metadata_from_str(content: &str) -> (String, String) {
     let mut region = "na".to_string();
@@ -188,7 +215,6 @@ pub async fn extract_log_metadata() -> (String, String) {
     (region, version)
 }
 
-
 // ─── Client platform header ───────────────────────────────────────────────────
 
 fn client_platform_header() -> String {
@@ -250,7 +276,10 @@ pub async fn get_api_config_with_client_and_endpoints(
     let entitlements: serde_json::Value = res.json().await?;
 
     let puuid = entitlements["subject"].as_str().unwrap_or("").to_string();
-    let access_token = entitlements["accessToken"].as_str().unwrap_or("").to_string();
+    let access_token = entitlements["accessToken"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     let entitlements_token = entitlements["token"].as_str().unwrap_or("").to_string();
 
     if puuid.is_empty() || access_token.is_empty() {
@@ -299,7 +328,12 @@ pub async fn get_api_config_with_client_and_endpoints(
         config: config.clone(),
     });
 
-    tracing::info!("ApiConfig loaded: region={} version={} puuid={}...", region, version, &puuid[..8.min(puuid.len())]);
+    tracing::info!(
+        "ApiConfig loaded: region={} version={} puuid={}...",
+        region,
+        version,
+        &puuid[..8.min(puuid.len())]
+    );
     Ok(config)
 }
 
@@ -325,16 +359,43 @@ mod tests {
     #[test]
     fn test_parse_log_metadata_regions() {
         let cases = [
-            ("na", "https://glz-na-1.na.a.pvp.net", "release-09.08-shipping-17-2917751"),
-            ("eu", "https://glz-eu-1.eu.a.pvp.net", "release-13.06-shipping-18-5590001"),
-            ("ap", "https://glz-ap-1.ap.a.pvp.net", "release-10.01-shipping-1-1000000"),
-            ("kr", "https://glz-kr-1.kr.a.pvp.net", "release-11.00-shipping-2-2000000"),
-            ("latam", "https://glz-latam-1.na.a.pvp.net", "release-12.00-shipping-3-3000000"),
-            ("br", "https://glz-br-1.na.a.pvp.net", "release-12.05-shipping-4-4000000"),
+            (
+                "na",
+                "https://glz-na-1.na.a.pvp.net",
+                "release-09.08-shipping-17-2917751",
+            ),
+            (
+                "eu",
+                "https://glz-eu-1.eu.a.pvp.net",
+                "release-13.06-shipping-18-5590001",
+            ),
+            (
+                "ap",
+                "https://glz-ap-1.ap.a.pvp.net",
+                "release-10.01-shipping-1-1000000",
+            ),
+            (
+                "kr",
+                "https://glz-kr-1.kr.a.pvp.net",
+                "release-11.00-shipping-2-2000000",
+            ),
+            (
+                "latam",
+                "https://glz-latam-1.na.a.pvp.net",
+                "release-12.00-shipping-3-3000000",
+            ),
+            (
+                "br",
+                "https://glz-br-1.na.a.pvp.net",
+                "release-12.05-shipping-4-4000000",
+            ),
         ];
 
         for (expected_region, glz_url, ver_str) in cases {
-            let log = format!("Log: Browse {}\nLog: CI server version: {}\n", glz_url, ver_str);
+            let log = format!(
+                "Log: Browse {}\nLog: CI server version: {}\n",
+                glz_url, ver_str
+            );
             let (region, version) = parse_log_metadata_from_str(&log);
             assert_eq!(region, expected_region);
             assert!(ver_str.contains(&version));
@@ -370,4 +431,3 @@ mod tests {
         assert_eq!(version, "13.06-shipping-18-5590001");
     }
 }
-

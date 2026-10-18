@@ -7,9 +7,9 @@
 // Both share the same 8s timeout and are built once at startup, then stored as
 // managed Tauri state so they're reused across every command invocation.
 
-use std::time::Duration;
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
+use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 pub const MAX_RATE_LIMIT_RETRIES: usize = 1;
@@ -33,9 +33,14 @@ impl<T> RiotResult<T> {
     }
 }
 
+fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Builds the local client that accepts Riot's self-signed localhost cert.
 /// ONLY used for 127.0.0.1 endpoints.
 pub fn build_local_client() -> Client {
+    ensure_crypto_provider();
     Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(TIMEOUT)
@@ -45,6 +50,7 @@ pub fn build_local_client() -> Client {
 
 /// Builds the normal TLS-verified remote client for Riot's servers.
 pub fn build_remote_client() -> Client {
+    ensure_crypto_provider();
     Client::builder()
         .timeout(TIMEOUT)
         .build()
@@ -96,7 +102,9 @@ pub async fn safe_get_json(
                 tokio::time::sleep(wait).await;
                 continue;
             }
-            return RiotResult::RateLimited { retry_after: retry_after_dur };
+            return RiotResult::RateLimited {
+                retry_after: retry_after_dur,
+            };
         }
         if !status.is_success() {
             tracing::warn!("safe_get_json: {} returned {}", url, status);
@@ -123,8 +131,15 @@ pub async fn safe_get_json(
                 return RiotResult::RateLimited { retry_after: None };
             }
             if envelope_status >= 400 {
-                tracing::warn!("safe_get_json: Riot error envelope from {} — httpStatus {}", url, envelope_status);
-                return RiotResult::Transient(format!("Riot error envelope httpStatus {}", envelope_status));
+                tracing::warn!(
+                    "safe_get_json: Riot error envelope from {} — httpStatus {}",
+                    url,
+                    envelope_status
+                );
+                return RiotResult::Transient(format!(
+                    "Riot error envelope httpStatus {}",
+                    envelope_status
+                ));
             }
         }
 
@@ -178,7 +193,9 @@ pub async fn safe_put_json<T: serde::Serialize + ?Sized>(
                 tokio::time::sleep(wait).await;
                 continue;
             }
-            return RiotResult::RateLimited { retry_after: retry_after_dur };
+            return RiotResult::RateLimited {
+                retry_after: retry_after_dur,
+            };
         }
         if !status.is_success() {
             tracing::warn!("safe_put_json: {} returned {}", url, status);
@@ -191,4 +208,3 @@ pub async fn safe_put_json<T: serde::Serialize + ?Sized>(
         }
     }
 }
-

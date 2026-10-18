@@ -6,13 +6,17 @@
 use reqwest::Client;
 use serde_json::Value;
 
-use super::config::ApiConfig;
 use super::client::{safe_get_json, safe_put_json, RiotResult};
+use super::config::ApiConfig;
 
 // ─── Local (loopback) endpoints ───────────────────────────────────────────────
 
 /// GET /chat/v4/presences — returns the raw presences response.
-pub async fn get_presences(local_client: &Client, local_base: &str, basic_auth: &str) -> Option<Value> {
+pub async fn get_presences(
+    local_client: &Client,
+    local_base: &str,
+    basic_auth: &str,
+) -> Option<Value> {
     let url = format!("{}/chat/v4/presences", local_base);
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -37,7 +41,10 @@ pub async fn get_pregame_player_id(remote: &Client, cfg: &ApiConfig) -> RiotResu
 }
 
 /// GET /core-game/v1/players/{puuid} — returns None if not in core-game.
-pub async fn get_coregame_player_id(remote: &Client, cfg: &ApiConfig) -> RiotResult<Option<String>> {
+pub async fn get_coregame_player_id(
+    remote: &Client,
+    cfg: &ApiConfig,
+) -> RiotResult<Option<String>> {
     let url = format!("{}/core-game/v1/players/{}", cfg.glz_url, cfg.puuid);
     match safe_get_json(remote, &url, &cfg.headers).await {
         RiotResult::Ok(val) => RiotResult::Ok(val["MatchID"].as_str().map(|s| s.to_string())),
@@ -49,13 +56,21 @@ pub async fn get_coregame_player_id(remote: &Client, cfg: &ApiConfig) -> RiotRes
 }
 
 /// GET /pregame/v1/matches/{matchId}
-pub async fn get_pregame_match(remote: &Client, cfg: &ApiConfig, match_id: &str) -> RiotResult<Value> {
+pub async fn get_pregame_match(
+    remote: &Client,
+    cfg: &ApiConfig,
+    match_id: &str,
+) -> RiotResult<Value> {
     let url = format!("{}/pregame/v1/matches/{}", cfg.glz_url, match_id);
     safe_get_json(remote, &url, &cfg.headers).await
 }
 
 /// GET /core-game/v1/matches/{matchId}
-pub async fn get_coregame_match(remote: &Client, cfg: &ApiConfig, match_id: &str) -> RiotResult<Value> {
+pub async fn get_coregame_match(
+    remote: &Client,
+    cfg: &ApiConfig,
+    match_id: &str,
+) -> RiotResult<Value> {
     let url = format!("{}/core-game/v1/matches/{}", cfg.glz_url, match_id);
     safe_get_json(remote, &url, &cfg.headers).await
 }
@@ -92,6 +107,9 @@ pub async fn get_names_from_puuids(
     cfg: &ApiConfig,
     puuids: &[String],
 ) -> Vec<Value> {
+    if puuids.is_empty() {
+        return vec![];
+    }
     let url = format!("{}/name-service/v2/players", cfg.pd_url);
     let result = safe_put_json(remote, &url, &cfg.headers, puuids).await;
     match result {
@@ -99,4 +117,3 @@ pub async fn get_names_from_puuids(
         _ => vec![],
     }
 }
-

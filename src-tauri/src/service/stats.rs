@@ -5,9 +5,9 @@
 //   - getMatchResult()
 //   - aggregatePlayerStats()
 
-use serde_json::Value;
-use crate::model::MatchResult;
 use super::player::{round1, round2, round_pct};
+use crate::model::MatchResult;
+use serde_json::Value;
 
 // ─── extractPlayerStats ───────────────────────────────────────────────────────
 
@@ -31,9 +31,9 @@ pub struct PlayerStats {
 pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
     // Find the player entry — Riot uses lowercase 'subject' in match details
     let player_stats = match match_detail["players"].as_array() {
-        Some(arr) => arr.iter().find(|p| {
-            p["subject"].as_str() == Some(puuid) || p["Subject"].as_str() == Some(puuid)
-        }),
+        Some(arr) => arr
+            .iter()
+            .find(|p| p["subject"].as_str() == Some(puuid) || p["Subject"].as_str() == Some(puuid)),
         None => None,
     };
 
@@ -42,7 +42,11 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
     let deaths = stats_node.and_then(|s| s["deaths"].as_u64()).unwrap_or(0) as u32;
     let assists = stats_node.and_then(|s| s["assists"].as_u64()).unwrap_or(0) as u32;
     let score = stats_node.and_then(|s| s["score"].as_u64()).unwrap_or(0);
-    let kd = if deaths > 0 { round2(kills as f64 / deaths as f64) } else { kills as f64 };
+    let kd = if deaths > 0 {
+        round2(kills as f64 / deaths as f64)
+    } else {
+        kills as f64
+    };
 
     // Round-by-round headshots / damage
     let mut headshots = 0u32;
@@ -52,16 +56,17 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
 
     if let Some(rounds) = match_detail["roundResults"].as_array() {
         for round in rounds {
-            let ps = round["playerStats"].as_array()
-                .and_then(|arr| arr.iter().find(|ps| {
+            let ps = round["playerStats"].as_array().and_then(|arr| {
+                arr.iter().find(|ps| {
                     ps["subject"].as_str() == Some(puuid) || ps["Subject"].as_str() == Some(puuid)
-                }));
+                })
+            });
             if let Some(ps) = ps {
                 if let Some(dmgs) = ps["damage"].as_array() {
                     for dmg in dmgs {
                         headshots += dmg["headshots"].as_u64().unwrap_or(0) as u32;
                         bodyshots += dmg["bodyshots"].as_u64().unwrap_or(0) as u32;
-                        legshots  += dmg["legshots"].as_u64().unwrap_or(0) as u32;
+                        legshots += dmg["legshots"].as_u64().unwrap_or(0) as u32;
                         total_damage += dmg["damage"].as_u64().unwrap_or(0);
                     }
                 }
@@ -72,18 +77,29 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
     let total_shots = headshots + bodyshots + legshots;
     let headshot_percent = if total_shots > 0 {
         round_pct(headshots as f64 / total_shots as f64)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
-    let rounds_len = match_detail["roundResults"].as_array().map(|a| a.len()).unwrap_or(0);
+    let rounds_len = match_detail["roundResults"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
     let rounds_played = stats_node
         .and_then(|s| s["roundsPlayed"].as_u64())
         .map(|r| r as usize)
         .unwrap_or(rounds_len);
 
-    let acs = if rounds_played > 0 { ((score as f64) / (rounds_played as f64)).round() as u32 } else { 0 };
+    let acs = if rounds_played > 0 {
+        ((score as f64) / (rounds_played as f64)).round() as u32
+    } else {
+        0
+    };
     let adr = if rounds_played > 0 {
         round1(total_damage as f64 / rounds_played as f64)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     // Win/loss from team data
     let team_id = player_stats
@@ -97,7 +113,11 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
             if let Some(team) = team {
                 let wins = team["roundsWon"].as_u64().unwrap_or(0) as f64;
                 let total = team["roundsPlayed"].as_u64().unwrap_or(0) as f64;
-                let wr = if total > 0.0 { round_pct(wins / total) } else { 0.0 };
+                let wr = if total > 0.0 {
+                    round_pct(wins / total)
+                } else {
+                    0.0
+                };
                 let won = if let Some(t_won) = team["won"].as_bool() {
                     t_won
                 } else {
@@ -105,27 +125,48 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
                     wins > opp_wins
                 };
                 (wr, won)
-            } else { (0.0, false) }
-        } else { (0.0, false) }
-    } else { (0.0, false) };
+            } else {
+                (0.0, false)
+            }
+        } else {
+            (0.0, false)
+        }
+    } else {
+        (0.0, false)
+    };
 
-    PlayerStats { kills, deaths, assists, kd, headshots, bodyshots, legshots, headshot_percent, winrate, acs, adr, won }
+    PlayerStats {
+        kills,
+        deaths,
+        assists,
+        kd,
+        headshots,
+        bodyshots,
+        legshots,
+        headshot_percent,
+        winrate,
+        acs,
+        adr,
+        won,
+    }
 }
 
 // ─── getMatchResult ───────────────────────────────────────────────────────────
 
 /// Port of getMatchResult(). Returns W/L/D, not just won/lost.
 pub fn get_match_result(match_detail: &Value, puuid: &str) -> MatchResult {
-    let player = match_detail["players"].as_array()
-        .and_then(|arr| arr.iter().find(|p| {
-            p["subject"].as_str() == Some(puuid) || p["Subject"].as_str() == Some(puuid)
-        }));
+    let player = match_detail["players"].as_array().and_then(|arr| {
+        arr.iter()
+            .find(|p| p["subject"].as_str() == Some(puuid) || p["Subject"].as_str() == Some(puuid))
+    });
 
     let team_id = player
         .and_then(|p| p["teamId"].as_str().or_else(|| p["TeamID"].as_str()))
         .unwrap_or("");
 
-    if team_id.is_empty() { return MatchResult::L; }
+    if team_id.is_empty() {
+        return MatchResult::L;
+    }
 
     let teams = match_detail["teams"].as_array();
     let team = teams.and_then(|arr| arr.iter().find(|t| t["teamId"].as_str() == Some(team_id)));
@@ -147,8 +188,8 @@ pub fn get_match_result(match_detail: &Value, puuid: &str) -> MatchResult {
 
     match my_rounds.cmp(&op_rounds) {
         std::cmp::Ordering::Greater => MatchResult::W,
-        std::cmp::Ordering::Less    => MatchResult::L,
-        std::cmp::Ordering::Equal   => MatchResult::D,
+        std::cmp::Ordering::Less => MatchResult::L,
+        std::cmp::Ordering::Equal => MatchResult::D,
     }
 }
 
@@ -173,12 +214,23 @@ pub struct AggregatedStats {
 /// Averages stats across pre-extracted PlayerStats without re-parsing match details.
 pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> AggregatedStats {
     let zero = AggregatedStats {
-        kills: 0.0, deaths: 0.0, assists: 0.0, kd: 0.0,
-        headshots: 0, bodyshots: 0, legshots: 0, headshot_percent: 0.0,
-        winrate: 0.0, acs: 0, adr: 0.0, recent_games_count: 0,
+        kills: 0.0,
+        deaths: 0.0,
+        assists: 0.0,
+        kd: 0.0,
+        headshots: 0,
+        bodyshots: 0,
+        legshots: 0,
+        headshot_percent: 0.0,
+        winrate: 0.0,
+        acs: 0,
+        adr: 0.0,
+        recent_games_count: 0,
     };
 
-    if player_stats.is_empty() { return zero; }
+    if player_stats.is_empty() {
+        return zero;
+    }
 
     let mut sum_kills = 0u32;
     let mut sum_deaths = 0u32;
@@ -191,36 +243,44 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
     let mut wins = 0u32;
 
     for s in player_stats {
-        sum_kills     += s.kills;
-        sum_deaths    += s.deaths;
-        sum_assists   += s.assists;
+        sum_kills += s.kills;
+        sum_deaths += s.deaths;
+        sum_assists += s.assists;
         sum_headshots += s.headshots;
         sum_bodyshots += s.bodyshots;
-        sum_legshots  += s.legshots;
-        sum_acs       += s.acs as u64;
-        sum_adr       += s.adr;
-        if s.won { wins += 1; }
+        sum_legshots += s.legshots;
+        sum_acs += s.acs as u64;
+        sum_adr += s.adr;
+        if s.won {
+            wins += 1;
+        }
     }
 
     let n = player_stats.len() as f64;
-    let kd = if sum_deaths > 0 { round2(sum_kills as f64 / sum_deaths as f64) } else { sum_kills as f64 };
+    let kd = if sum_deaths > 0 {
+        round2(sum_kills as f64 / sum_deaths as f64)
+    } else {
+        sum_kills as f64
+    };
     let total_shots = sum_headshots + sum_bodyshots + sum_legshots;
     let headshot_percent = if total_shots > 0 {
         round_pct(sum_headshots as f64 / total_shots as f64)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     AggregatedStats {
-        kills:    round1(sum_kills as f64 / n),
-        deaths:   round1(sum_deaths as f64 / n),
-        assists:  round1(sum_assists as f64 / n),
+        kills: round1(sum_kills as f64 / n),
+        deaths: round1(sum_deaths as f64 / n),
+        assists: round1(sum_assists as f64 / n),
         kd,
         headshots: sum_headshots,
         bodyshots: sum_bodyshots,
-        legshots:  sum_legshots,
+        legshots: sum_legshots,
         headshot_percent,
-        winrate:   round_pct(wins as f64 / n),
-        acs:       (sum_acs as f64 / n).round() as u32,
-        adr:       round1(sum_adr / n),
+        winrate: round_pct(wins as f64 / n),
+        acs: (sum_acs as f64 / n).round() as u32,
+        adr: round1(sum_adr / n),
         recent_games_count: player_stats.len() as u32,
     }
 }

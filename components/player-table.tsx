@@ -310,60 +310,9 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
   );
 }
 
-function areRowPropsEqual(prev: RowProps, next: RowProps): boolean {
-  if (prev.expanded !== next.expanded) return false;
-  if (prev.self !== next.self) return false;
-  if (prev.i !== next.i) return false;
-  if (prev.onToggle !== next.onToggle) return false;
-
-  const prevBadges = prev.badges;
-  const nextBadges = next.badges;
-  if (prevBadges !== nextBadges) {
-    if (!prevBadges || !nextBadges) return false;
-    if (prevBadges.length !== nextBadges.length) return false;
-    for (let idx = 0; idx < prevBadges.length; idx++) {
-      if (prevBadges[idx] !== nextBadges[idx]) return false;
-    }
-  }
-
-  const p1 = prev.p;
-  const p2 = next.p;
-  if (p1 === p2) return true;
-
-  return (
-    p1.puuid === p2.puuid &&
-    p1.agentId === p2.agentId &&
-    p1.agentName === p2.agentName &&
-    p1.rank === p2.rank &&
-    p1.rankName === p2.rankName &&
-    p1.rr === p2.rr &&
-    p1.peakRank === p2.peakRank &&
-    p1.peakRankName === p2.peakRankName &&
-    p1.previousRank === p2.previousRank &&
-    p1.partyNumber === p2.partyNumber &&
-    p1.partySize === p2.partySize &&
-    p1.name === p2.name &&
-    p1.tag === p2.tag &&
-    p1.kills === p2.kills &&
-    p1.deaths === p2.deaths &&
-    p1.assists === p2.assists &&
-    p1.acs === p2.acs &&
-    p1.adr === p2.adr &&
-    p1.headshotPercent === p2.headshotPercent &&
-    p1.winrate === p2.winrate &&
-    p1.kd === p2.kd &&
-    p1.accountLevel === p2.accountLevel &&
-    p1.isCurrentActRank === p2.isCurrentActRank &&
-    p1.currentSeasonWins === p2.currentSeasonWins &&
-    p1.teamId === p2.teamId &&
-    p1.lastMatchKills === p2.lastMatchKills &&
-    p1.lastMatchDeaths === p2.lastMatchDeaths &&
-    p1.lastMatchAssists === p2.lastMatchAssists &&
-    p1.lastMatchKD === p2.lastMatchKD
-  );
-}
-
-const MemoizedRow = memo(Row, areRowPropsEqual);
+// BUG-02: Rely on structural sharing from sharePlayers() so default shallow prop
+// comparison works without maintaining a fragile 30-field comparator.
+const MemoizedRow = memo(Row);
 
 function ExpandedRow({ p }: {
   p: Player;

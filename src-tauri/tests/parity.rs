@@ -1,11 +1,11 @@
-use std::path::{Path, PathBuf};
 use serde_json::Value;
-use wiremock::{MockServer, ResponseTemplate, Mock};
+use std::path::{Path, PathBuf};
 use wiremock::matchers::{method, path as url_path, path_regex};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use valorant_tracker::riot::config::RiotEndpoints;
-use valorant_tracker::state::AppState;
 use valorant_tracker::service::match_service::get_match;
+use valorant_tracker::state::AppState;
 
 fn allowlist_null_or_missing(key: &str) -> bool {
     matches!(key, "match" | "party" | "startingSide")
@@ -36,7 +36,10 @@ fn assert_json_match(actual: &Value, expected: &Value, path: &str) {
                         if allowlist_null_or_missing(key) && e.is_null() {
                             continue;
                         }
-                        panic!("Missing expected key '{}' at {} with value {:?}", key, current_path, e);
+                        panic!(
+                            "Missing expected key '{}' at {} with value {:?}",
+                            key, current_path, e
+                        );
                     }
                     (None, None) => unreachable!(),
                 }
@@ -190,7 +193,9 @@ async fn setup_wiremock(scenario_dir: &Path) -> MockServer {
             let filepath = entry.path();
 
             if filename.starts_with("comp_") && filename.ends_with(".json") {
-                let puuid = filename.trim_start_matches("comp_").trim_end_matches(".json");
+                let puuid = filename
+                    .trim_start_matches("comp_")
+                    .trim_end_matches(".json");
                 if let Ok(content) = std::fs::read_to_string(&filepath) {
                     if let Ok(json) = serde_json::from_str::<Value>(&content) {
                         let path_str = format!("/mmr/v1/players/{}/competitiveupdates", puuid);
@@ -202,7 +207,9 @@ async fn setup_wiremock(scenario_dir: &Path) -> MockServer {
                     }
                 }
             } else if filename.starts_with("mmr_") && filename.ends_with(".json") {
-                let puuid = filename.trim_start_matches("mmr_").trim_end_matches(".json");
+                let puuid = filename
+                    .trim_start_matches("mmr_")
+                    .trim_end_matches(".json");
                 if let Ok(content) = std::fs::read_to_string(&filepath) {
                     if let Ok(json) = serde_json::from_str::<Value>(&content) {
                         let path_str = format!("/mmr/v1/players/{}", puuid);
@@ -214,7 +221,9 @@ async fn setup_wiremock(scenario_dir: &Path) -> MockServer {
                     }
                 }
             } else if filename.starts_with("match_") && filename.ends_with(".json") {
-                let match_id = filename.trim_start_matches("match_").trim_end_matches(".json");
+                let match_id = filename
+                    .trim_start_matches("match_")
+                    .trim_end_matches(".json");
                 if let Ok(content) = std::fs::read_to_string(&filepath) {
                     if let Ok(json) = serde_json::from_str::<Value>(&content) {
                         let path_str = format!("/match-details/v1/matches/{}", match_id);
@@ -237,15 +246,32 @@ static TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 async fn run_scenario_test(scenario_name: &str) {
     let _guard = TEST_MUTEX.lock().await;
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let scenario_dir = manifest_dir.join("fixtures").join("redacted").join(scenario_name);
-    let expected_file = manifest_dir.join("fixtures").join("expected").join(format!("{}.json", scenario_name));
+    let scenario_dir = manifest_dir
+        .join("fixtures")
+        .join("redacted")
+        .join(scenario_name);
+    let expected_file = manifest_dir
+        .join("fixtures")
+        .join("expected")
+        .join(format!("{}.json", scenario_name));
 
-    assert!(scenario_dir.exists(), "Scenario dir does not exist: {:?}", scenario_dir);
-    assert!(expected_file.exists(), "Expected file does not exist: {:?}", expected_file);
+    assert!(
+        scenario_dir.exists(),
+        "Scenario dir does not exist: {:?}",
+        scenario_dir
+    );
+    assert!(
+        expected_file.exists(),
+        "Expected file does not exist: {:?}",
+        expected_file
+    );
 
     // Setup temp LOCALAPPDATA directory
     let temp_dir = std::env::temp_dir().join(format!("valight-parity-{}", scenario_name));
-    let riot_dir = temp_dir.join("Riot Games").join("Riot Client").join("Config");
+    let riot_dir = temp_dir
+        .join("Riot Games")
+        .join("Riot Client")
+        .join("Config");
     let val_dir = temp_dir.join("VALORANT").join("Saved").join("Logs");
     std::fs::create_dir_all(&riot_dir).unwrap();
     std::fs::create_dir_all(&val_dir).unwrap();

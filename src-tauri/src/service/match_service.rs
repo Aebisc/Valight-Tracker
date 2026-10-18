@@ -16,21 +16,19 @@
 //   8. Presence + party
 //   9. Cache write
 
-use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 
-
 use crate::model::{ApiError, ApiResponse, MatchInfo, ValorantPlayer};
+use crate::riot::{client::RiotResult, config, endpoints, lockfile};
+use crate::service::{disk_cache, party, player, side, stats};
 use crate::state::{AppState, MatchCache};
-use crate::riot::{lockfile, config, endpoints, client::RiotResult};
-use crate::service::{player, stats, party, side};
 
 const RECENT_GAMES_COUNT: u32 = 20;
 const DETAIL_CONCURRENCY: usize = 10;
-const MMR_CONCURRENCY: usize = 4;
 
 // ─── Data maps (loaded once at startup) ───────────────────────────────────────
 
@@ -76,26 +74,30 @@ fn strip_extension(s: &str) -> &str {
 pub fn strip_and_extract(path: &str) -> (String, String) {
     let stripped = strip_extension(path);
     let segs: Vec<&str> = stripped.split('/').filter(|s| !s.is_empty()).collect();
-    let keyword = if segs.len() >= 3 { segs[2].to_string() } else { String::new() };
+    let keyword = if segs.len() >= 3 {
+        segs[2].to_string()
+    } else {
+        String::new()
+    };
     (stripped.to_string(), keyword)
 }
 
 pub fn resolve_map_name(map_id: &str) -> String {
     let map_lower = map_id.to_lowercase();
     let map_lower_stripped = strip_extension(&map_lower);
-    if let Some(name) = MAP_MAP.get(map_id)
+    if let Some(name) = MAP_MAP
+        .get(map_id)
         .or_else(|| MAP_MAP.get(map_lower_stripped))
-        .or_else(|| MAP_MAP.get(&map_lower)) {
+        .or_else(|| MAP_MAP.get(&map_lower))
+    {
         return name.clone();
     }
     // Fallback: extract last path segment, strip extension, replace '_' with ' '
-    let last = map_id.split('/').last().unwrap_or("");
+    let last = map_id.split('/').next_back().unwrap_or("");
     let no_ext = strip_extension(last).replace('_', " ");
 
     static WORD_RE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\b\w").unwrap());
-    let title_cased = WORD_RE.replace_all(&no_ext, |cap: &regex::Captures| {
-        cap[0].to_uppercase()
-    });
+    let title_cased = WORD_RE.replace_all(&no_ext, |cap: &regex::Captures| cap[0].to_uppercase());
 
     if title_cased.is_empty() {
         "Unknown".to_string()
@@ -104,12 +106,20 @@ pub fn resolve_map_name(map_id: &str) -> String {
     }
 }
 
-pub fn resolve_game_mode_name(queue_id: &str, mode: &str, is_ranked: bool) -> (String, bool, String) {
+pub fn resolve_game_mode_name(
+    queue_id: &str,
+    mode: &str,
+    is_ranked: bool,
+) -> (String, bool, String) {
     let queue_lower = queue_id.to_lowercase();
     let mode_lower = mode.to_lowercase();
     let (q_stripped, q_keyword) = strip_and_extract(&queue_lower);
     let (m_stripped, m_keyword) = strip_and_extract(&mode_lower);
-    let mode_keyword = if !q_keyword.is_empty() { q_keyword.clone() } else { m_keyword.clone() };
+    let mode_keyword = if !q_keyword.is_empty() {
+        q_keyword.clone()
+    } else {
+        m_keyword.clone()
+    };
 
     let clean_fallback = if !mode_keyword.is_empty() {
         let mut c = mode_keyword.chars();
@@ -123,9 +133,12 @@ pub fn resolve_game_mode_name(queue_id: &str, mode: &str, is_ranked: bool) -> (S
             None => String::new(),
             Some(f) => f.to_uppercase().to_string() + c.as_str().to_lowercase().as_str(),
         }
-    } else { "Unknown".to_string() };
+    } else {
+        "Unknown".to_string()
+    };
 
-    let mut name = GAMEMODE_MAP.get(&queue_lower)
+    let mut name = GAMEMODE_MAP
+        .get(&queue_lower)
         .or_else(|| GAMEMODE_MAP.get(&mode_lower))
         .or_else(|| GAMEMODE_MAP.get(&q_stripped))
         .or_else(|| GAMEMODE_MAP.get(&m_stripped))
@@ -135,7 +148,11 @@ pub fn resolve_game_mode_name(queue_id: &str, mode: &str, is_ranked: bool) -> (S
         .unwrap_or(clean_fallback);
 
     if name == "Standard" {
-        name = if is_ranked { "Competitive".to_string() } else { "Unrated".to_string() };
+        name = if is_ranked {
+            "Competitive".to_string()
+        } else {
+            "Unrated".to_string()
+        };
     }
 
     let is_dm = DEATHMATCH_MODES.contains(&queue_lower) || DEATHMATCH_MODES.contains(&mode_keyword);
@@ -151,50 +168,139 @@ pub enum DetectedState {
     Menus,
 }
 
+async fn refresh_auth(
+    local: &reqwest::Client,
+    lockfile: &lockfile::Lockfile,
+    endpoints: Option<config::RiotEndpoints>,
+    cfg: &mut config::ApiConfig,
+) -> Result<(), ApiError> {
+    config::clear_config_cache().await;
+    match config::get_api_config_with_client_and_endpoints(local, lockfile, true, endpoints).await {
+        Ok(c) => {
+            *cfg = c;
+            Ok(())
+        }
+        Err(_) => Err(ApiError::auth(
+            "Unauthorized: failed to refresh credentials",
+        )),
+    }
+}
+
+fn riot_result_to_api_error(r: RiotResult<Option<String>>) -> ApiError {
+    match r {
+        RiotResult::Unauthorized => ApiError::auth("Unauthorized by Riot API"),
+        RiotResult::RateLimited { .. } => ApiError::transient("Rate limited by Riot API"),
+        RiotResult::Transient(msg) => ApiError::transient(msg),
+        _ => ApiError::internal("Unexpected API result"),
+    }
+}
+
 pub async fn detect_state(
     remote: &reqwest::Client,
     local: &reqwest::Client,
     lockfile: &lockfile::Lockfile,
     endpoints: Option<config::RiotEndpoints>,
     cfg: &mut config::ApiConfig,
+    last_state: Option<&str>,
 ) -> Result<DetectedState, ApiError> {
-    let mut core_res = endpoints::get_coregame_player_id(remote, cfg).await;
-    if core_res == RiotResult::Unauthorized {
-        config::clear_config_cache().await;
-        match config::get_api_config_with_client_and_endpoints(local, lockfile, true, endpoints.clone()).await {
-            Ok(c) => {
-                *cfg = c;
+    match last_state {
+        Some("INGAME") => {
+            // BUG-03: Steady-state INGAME: query coregame first, stop immediately on hit (1 GLZ request)
+            let mut core_res = endpoints::get_coregame_player_id(remote, cfg).await;
+            if core_res == RiotResult::Unauthorized {
+                refresh_auth(local, lockfile, endpoints.clone(), cfg).await?;
                 core_res = endpoints::get_coregame_player_id(remote, cfg).await;
             }
-            Err(_) => return Err(ApiError::auth("Unauthorized: failed to refresh credentials")),
-        }
-    }
 
-    match core_res {
-        RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Ingame(mid)),
-        RiotResult::NotFound | RiotResult::Ok(_) => {
-            let mut pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
-            if pre_res == RiotResult::Unauthorized {
-                config::clear_config_cache().await;
-                match config::get_api_config_with_client_and_endpoints(local, lockfile, true, endpoints).await {
-                    Ok(c) => {
-                        *cfg = c;
+            match core_res {
+                RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Ingame(mid)),
+                RiotResult::NotFound | RiotResult::Ok(_) => {
+                    // Match ended or dodged: check pregame
+                    let mut pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
+                    if pre_res == RiotResult::Unauthorized {
+                        refresh_auth(local, lockfile, endpoints, cfg).await?;
                         pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
                     }
-                    Err(_) => return Err(ApiError::auth("Unauthorized: failed to refresh credentials")),
+                    match pre_res {
+                        RiotResult::Ok(Some(mid)) if !mid.is_empty() => {
+                            Ok(DetectedState::Pregame(mid))
+                        }
+                        RiotResult::NotFound | RiotResult::Ok(_) => Ok(DetectedState::Menus),
+                        err => Err(riot_result_to_api_error(err)),
+                    }
                 }
-            }
-            match pre_res {
-                RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Pregame(mid)),
-                RiotResult::NotFound | RiotResult::Ok(_) => Ok(DetectedState::Menus),
-                RiotResult::Unauthorized => Err(ApiError::auth("Unauthorized by Riot API")),
-                RiotResult::RateLimited { .. } => Err(ApiError::transient("Rate limited by Riot API")),
-                RiotResult::Transient(msg) => Err(ApiError::transient(msg)),
+                err => Err(riot_result_to_api_error(err)),
             }
         }
-        RiotResult::Unauthorized => Err(ApiError::auth("Unauthorized by Riot API")),
-        RiotResult::RateLimited { .. } => Err(ApiError::transient("Rate limited by Riot API")),
-        RiotResult::Transient(msg) => Err(ApiError::transient(msg)),
+        Some("PREGAME") => {
+            // BUG-03: Steady-state PREGAME: query pregame first, stop immediately on hit (1 GLZ request)
+            let mut pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
+            if pre_res == RiotResult::Unauthorized {
+                refresh_auth(local, lockfile, endpoints.clone(), cfg).await?;
+                pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
+            }
+
+            match pre_res {
+                RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Pregame(mid)),
+                RiotResult::NotFound | RiotResult::Ok(_) => {
+                    // Match launched: check coregame
+                    let mut core_res = endpoints::get_coregame_player_id(remote, cfg).await;
+                    if core_res == RiotResult::Unauthorized {
+                        refresh_auth(local, lockfile, endpoints, cfg).await?;
+                        core_res = endpoints::get_coregame_player_id(remote, cfg).await;
+                    }
+                    match core_res {
+                        RiotResult::Ok(Some(mid)) if !mid.is_empty() => {
+                            Ok(DetectedState::Ingame(mid))
+                        }
+                        RiotResult::NotFound | RiotResult::Ok(_) => Ok(DetectedState::Menus),
+                        err => Err(riot_result_to_api_error(err)),
+                    }
+                }
+                err => Err(riot_result_to_api_error(err)),
+            }
+        }
+        _ => {
+            // BUG-03: MENUS or unknown: query both in parallel with tokio::join!
+            let (mut core_res, mut pre_res) = tokio::join!(
+                endpoints::get_coregame_player_id(remote, cfg),
+                endpoints::get_pregame_player_id(remote, cfg),
+            );
+
+            let core_hit = matches!(&core_res, RiotResult::Ok(Some(mid)) if !mid.is_empty());
+            let pre_hit = matches!(&pre_res, RiotResult::Ok(Some(mid)) if !mid.is_empty());
+
+            // If neither call is a hit and at least one is unauthorized, refresh auth once
+            if !core_hit
+                && !pre_hit
+                && (core_res == RiotResult::Unauthorized || pre_res == RiotResult::Unauthorized)
+            {
+                refresh_auth(local, lockfile, endpoints, cfg).await?;
+                if core_res == RiotResult::Unauthorized {
+                    core_res = endpoints::get_coregame_player_id(remote, cfg).await;
+                }
+                if pre_res == RiotResult::Unauthorized {
+                    pre_res = endpoints::get_pregame_player_id(remote, cfg).await;
+                }
+            }
+
+            // Resolution priority: core hit -> Ingame, pre hit -> Pregame, both not found -> Menus, else error
+            match core_res {
+                RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Ingame(mid)),
+                _ => match pre_res {
+                    RiotResult::Ok(Some(mid)) if !mid.is_empty() => Ok(DetectedState::Pregame(mid)),
+                    RiotResult::NotFound | RiotResult::Ok(_)
+                        if matches!(core_res, RiotResult::NotFound | RiotResult::Ok(_)) =>
+                    {
+                        Ok(DetectedState::Menus)
+                    }
+                    RiotResult::NotFound | RiotResult::Ok(_) => {
+                        Err(riot_result_to_api_error(core_res))
+                    }
+                    err => Err(riot_result_to_api_error(err)),
+                },
+            }
+        }
     }
 }
 
@@ -202,6 +308,74 @@ pub async fn detect_state(
 
 /// The `get_match` Tauri command. Equivalent to the GET /api/match handler.
 pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, ApiError> {
+    // BUG-01: Record arrival generations
+    let s0 = state
+        .build_started
+        .load(std::sync::atomic::Ordering::Acquire);
+    let f0 = state
+        .build_finished
+        .load(std::sync::atomic::Ordering::Acquire);
+    let _build_guard = state.build_lock.lock().await;
+
+    // Check if a build finished while waiting for the single-flight lock
+    if !force {
+        if state
+            .build_finished
+            .load(std::sync::atomic::Ordering::Acquire)
+            > f0
+        {
+            let cache = state.match_cache.lock().await;
+            if let Some(ref cached) = *cache {
+                return Ok(ApiResponse {
+                    game_state: cached.game_state.clone(),
+                    r#match: Some(cached.match_info.clone()),
+                    players: Some(cached.players.clone()),
+                    self_puuid: Some(cached.self_puuid.clone()),
+                    error: None,
+                });
+            }
+        }
+    } else {
+        // Forced refresh: reuse only if a fresh build started after our arrival
+        if state
+            .build_started
+            .load(std::sync::atomic::Ordering::Acquire)
+            > s0
+        {
+            let cache = state.match_cache.lock().await;
+            if let Some(ref cached) = *cache {
+                return Ok(ApiResponse {
+                    game_state: cached.game_state.clone(),
+                    r#match: Some(cached.match_info.clone()),
+                    players: Some(cached.players.clone()),
+                    self_puuid: Some(cached.self_puuid.clone()),
+                    error: None,
+                });
+            }
+        }
+    }
+
+    state
+        .build_started
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    struct BuildDropGuard<'a> {
+        finished: &'a std::sync::atomic::AtomicU64,
+    }
+    impl<'a> Drop for BuildDropGuard<'a> {
+        fn drop(&mut self) {
+            self.finished
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let _drop_guard = BuildDropGuard {
+        finished: &state.build_finished,
+    };
+
+    let last_state = {
+        let cache = state.match_cache.lock().await;
+        cache.as_ref().map(|c| c.game_state.clone())
+    };
+
     // Force-clear caches
     if force {
         *state.match_cache.lock().await = None;
@@ -211,7 +385,10 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     // 1. Read lockfile — OFFLINE if absent
     let lockfile = match lockfile::read_lockfile().await {
         Ok(lf) => lf,
-        Err(lockfile::LockfileError::NotFound { .. }) => return Ok(ApiResponse::offline()),
+        Err(lockfile::LockfileError::NotFound { .. }) => {
+            *state.match_cache.lock().await = None;
+            return Ok(ApiResponse::offline());
+        }
         Err(e) => return Err(ApiError::internal(e.to_string())),
     };
 
@@ -221,11 +398,17 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         &lockfile,
         force,
         state.endpoints_override.clone(),
-    ).await {
+    )
+    .await
+    {
         Ok(c) => c,
-        Err(config::ConfigError::EntitlementsUnavailable) => return Ok(ApiResponse::offline()),
+        Err(config::ConfigError::EntitlementsUnavailable) => {
+            *state.match_cache.lock().await = None;
+            return Ok(ApiResponse::offline());
+        }
         Err(config::ConfigError::Http(e)) => {
             if e.is_connect() {
+                *state.match_cache.lock().await = None;
                 return Ok(ApiResponse::offline());
             }
             return Err(ApiError::transient(format!("Entitlements error: {}", e)));
@@ -239,7 +422,9 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         &lockfile,
         state.endpoints_override.clone(),
         &mut cfg,
-    ).await?;
+        last_state.as_deref(),
+    )
+    .await?;
 
     // INGAME fast-path: cache hit for the same match
     if let DetectedState::Ingame(ref mid) = detected {
@@ -263,52 +448,47 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         return Ok(ApiResponse::menus(cfg.puuid.clone()));
     }
 
-    // We're in a match — acquire the single-flight build lock
-    let _build_guard = state.build_lock.lock().await;
-
-    // Re-check cache under the lock (another concurrent call may have just built it)
-    if let DetectedState::Ingame(ref mid) = detected {
-        let cache = state.match_cache.lock().await;
-        if let Some(ref cached) = *cache {
-            if &cached.match_id == mid && cached.game_state == "INGAME" {
-                return Ok(ApiResponse {
-                    game_state: cached.game_state.clone(),
-                    r#match: Some(cached.match_info.clone()),
-                    players: Some(cached.players.clone()),
-                    self_puuid: Some(cfg.puuid.clone()),
-                    error: None,
-                });
-            }
-        }
-    }
-
-    // 6. Fetch presences for party detection
-    let presences_raw = endpoints::get_presences(
-        &state.local_client,
-        &cfg.endpoints.local_base,
-        &lockfile.basic_auth,
-    ).await;
-    let presences = presences_raw.as_ref()
-        .map(|v| party::parse_presences(v))
-        .unwrap_or_default();
-
-    // 7. Fetch match data
-    let (resolved_match_id, resolved_game_state, raw_players, map_id, game_mode, game_mode_id,
-         is_ranked, server, season_id, ally_team_id) = match detected {
+    // 6. Fetch match data
+    let (
+        resolved_match_id,
+        resolved_game_state,
+        raw_players,
+        map_id,
+        game_mode,
+        game_mode_id,
+        is_ranked,
+        server,
+        season_id,
+        ally_team_id,
+    ) = match detected {
         DetectedState::Ingame(ref mid) => {
-            let mut cg = match endpoints::get_coregame_match(&state.remote_client, &cfg, mid).await {
+            let mut cg = match endpoints::get_coregame_match(&state.remote_client, &cfg, mid).await
+            {
                 RiotResult::Ok(v) => v,
                 RiotResult::NotFound => {
                     *state.match_cache.lock().await = None;
                     return Ok(ApiResponse::menus(cfg.puuid.clone()));
                 }
-                RiotResult::Unauthorized => return Err(ApiError::auth("Unauthorized fetching coregame match")),
-                RiotResult::RateLimited { .. } => return Err(ApiError::transient("Rate limited fetching coregame match")),
+                RiotResult::Unauthorized => {
+                    return Err(ApiError::auth("Unauthorized fetching coregame match"))
+                }
+                RiotResult::RateLimited { .. } => {
+                    return Err(ApiError::transient("Rate limited fetching coregame match"))
+                }
                 RiotResult::Transient(msg) => return Err(ApiError::transient(msg)),
             };
-            let players: Vec<Value> = cg["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
-            let game_mode_id = cg["QueueID"].as_str().or_else(|| cg["ModeID"].as_str()).unwrap_or("").to_string();
-            let is_ranked = cg["IsRanked"].as_bool().unwrap_or(game_mode_id == "competitive");
+            let players: Vec<Value> = cg["Players"]
+                .as_array_mut()
+                .map(std::mem::take)
+                .unwrap_or_default();
+            let game_mode_id = cg["QueueID"]
+                .as_str()
+                .or_else(|| cg["ModeID"].as_str())
+                .unwrap_or("")
+                .to_string();
+            let is_ranked = cg["IsRanked"]
+                .as_bool()
+                .unwrap_or(game_mode_id == "competitive");
             (
                 mid.clone(),
                 "INGAME".to_string(),
@@ -329,25 +509,36 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     *state.match_cache.lock().await = None;
                     return Ok(ApiResponse::menus(cfg.puuid.clone()));
                 }
-                RiotResult::Unauthorized => return Err(ApiError::auth("Unauthorized fetching pregame match")),
-                RiotResult::RateLimited { .. } => return Err(ApiError::transient("Rate limited fetching pregame match")),
+                RiotResult::Unauthorized => {
+                    return Err(ApiError::auth("Unauthorized fetching pregame match"))
+                }
+                RiotResult::RateLimited { .. } => {
+                    return Err(ApiError::transient("Rate limited fetching pregame match"))
+                }
                 RiotResult::Transient(msg) => return Err(ApiError::transient(msg)),
             };
-            let ally_team_id: Option<String> = pg["AllyTeam"]["TeamID"].as_str().map(|s| s.to_string());
+            let ally_team_id: Option<String> =
+                pg["AllyTeam"]["TeamID"].as_str().map(|s| s.to_string());
             let enemy_team_id = match ally_team_id.as_deref() {
                 Some("Blue") => Some("Red".to_string()),
-                Some("Red")  => Some("Blue".to_string()),
-                _            => pg["EnemyTeam"]["TeamID"].as_str().map(|s| s.to_string()),
+                Some("Red") => Some("Blue".to_string()),
+                _ => pg["EnemyTeam"]["TeamID"].as_str().map(|s| s.to_string()),
             };
             let ally_tid = ally_team_id.as_deref().unwrap_or("Blue").to_string();
             let enemy_tid = enemy_team_id.as_deref().unwrap_or("Red").to_string();
-            let mut players = pg["AllyTeam"]["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
+            let mut players = pg["AllyTeam"]["Players"]
+                .as_array_mut()
+                .map(std::mem::take)
+                .unwrap_or_default();
             for p in &mut players {
                 if p.get("TeamID").is_none() || p["TeamID"].is_null() {
                     p["TeamID"] = Value::String(ally_tid.clone());
                 }
             }
-            let mut enemy_players = pg["EnemyTeam"]["Players"].as_array_mut().map(std::mem::take).unwrap_or_default();
+            let mut enemy_players = pg["EnemyTeam"]["Players"]
+                .as_array_mut()
+                .map(std::mem::take)
+                .unwrap_or_default();
             for p in &mut enemy_players {
                 if p.get("TeamID").is_none() || p["TeamID"].is_null() {
                     p["TeamID"] = Value::String(enemy_tid.clone());
@@ -360,7 +551,11 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 players,
                 pg["MapID"].as_str().unwrap_or("").to_string(),
                 pg["Mode"].as_str().unwrap_or("").to_string(),
-                pg["QueueID"].as_str().or_else(|| pg["ModeID"].as_str()).unwrap_or("").to_string(),
+                pg["QueueID"]
+                    .as_str()
+                    .or_else(|| pg["ModeID"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 pg["IsRanked"].as_bool().unwrap_or(false),
                 String::new(),
                 pg["SeasonID"].as_str().unwrap_or("").to_string(),
@@ -370,16 +565,26 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         DetectedState::Menus => unreachable!(),
     };
 
-
-    // Invalidate match cache if match changed
-    {
+    // Invalidate match cache if match changed, but preserve pregame teammates
+    // if transitioning from PREGAME to INGAME for the same match/session.
+    let pregame_teammates: HashMap<String, ValorantPlayer> = {
         let mut cache = state.match_cache.lock().await;
+        let mut map = HashMap::new();
         if let Some(ref c) = *cache {
+            if c.game_state == "PREGAME"
+                && resolved_game_state == "INGAME"
+                && (c.match_info.map_id.is_empty() || c.match_info.map_id == map_id)
+            {
+                for p in &c.players {
+                    map.insert(p.puuid.clone(), p.clone());
+                }
+            }
             if c.match_id != resolved_match_id || c.game_state != resolved_game_state {
                 *cache = None;
             }
         }
-    }
+        map
+    };
 
     // PREGAME cache hit: just update agent selections
     {
@@ -389,22 +594,22 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 if resolved_game_state == "PREGAME" {
                     for p in cached.players.iter_mut() {
                         if let Some(fresh) = raw_players.iter().find(|fp| {
-                            fp["Subject"].as_str() == Some(&p.puuid) || fp["PlayerIdentity"]["Subject"].as_str() == Some(&p.puuid)
+                            fp["Subject"].as_str() == Some(&p.puuid)
+                                || fp["PlayerIdentity"]["Subject"].as_str() == Some(&p.puuid)
                         }) {
-                            let fresh_agent_id = fresh["CharacterID"].as_str()
+                            let fresh_agent_id = fresh["CharacterID"]
+                                .as_str()
                                 .or_else(|| fresh["CharacterSelectionID"].as_str())
                                 .unwrap_or("");
                             if !fresh_agent_id.is_empty() && fresh_agent_id != p.agent_id {
                                 p.agent_id = fresh_agent_id.to_string();
-                                p.agent_name = AGENT_MAP.get(fresh_agent_id)
+                                p.agent_name = AGENT_MAP
+                                    .get(fresh_agent_id)
                                     .cloned()
                                     .unwrap_or_else(|| "Unknown".to_string());
                             }
                         }
                     }
-                }
-                if !presences.is_empty() {
-                    party::assign_party_numbers(&mut cached.players, &presences);
                 }
                 return Ok(ApiResponse {
                     game_state: cached.game_state.clone(),
@@ -414,46 +619,83 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     error: None,
                 });
             }
-
         }
     }
 
-    // 8. Full build: fetch names, MMR, comp updates, match details
-    let puuids: Vec<String> = raw_players.iter()
-        .filter_map(|p| p["Subject"].as_str().or_else(|| p["PlayerIdentity"]["Subject"].as_str()))
+    // 7. Full build: fetch presences, names, MMR, comp updates concurrently
+    let puuids: Vec<String> = raw_players
+        .iter()
+        .filter_map(|p| {
+            p["Subject"]
+                .as_str()
+                .or_else(|| p["PlayerIdentity"]["Subject"].as_str())
+        })
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
         .collect();
 
+    // Only query MMR / comp history / names for players not already cached from pregame
+    let needed_puuids: Vec<String> = puuids
+        .iter()
+        .filter(|id| !pregame_teammates.contains_key(*id))
+        .cloned()
+        .collect();
+
     let remote_client = state.remote_client.clone();
     let cfg_clone = cfg.clone();
-    let mmr_stream = stream::iter(puuids.clone())
+    let mmr_stream = stream::iter(needed_puuids.clone())
         .map(move |puuid| {
             let remote = remote_client.clone();
             let cfg_ref = cfg_clone.clone();
             async move {
                 let (mmr, comp) = tokio::join!(
                     endpoints::get_player_mmr(&remote, &cfg_ref, &puuid),
-                    endpoints::get_competitive_updates(&remote, &cfg_ref, &puuid, RECENT_GAMES_COUNT),
+                    endpoints::get_competitive_updates(
+                        &remote,
+                        &cfg_ref,
+                        &puuid,
+                        RECENT_GAMES_COUNT
+                    ),
                 );
                 (puuid, (mmr, comp))
             }
         })
-        .buffer_unordered(MMR_CONCURRENCY);
+        .buffer_unordered(needed_puuids.len().max(1));
 
-    let (names_raw, mmr_comp_results): (Vec<Value>, HashMap<String, (Option<Value>, Option<Value>)>) = tokio::join!(
-        endpoints::get_names_from_puuids(&state.remote_client, &cfg, &puuids),
-        mmr_stream.collect()
+    let (presences_raw, names_raw, mmr_comp_results) = tokio::join!(
+        endpoints::get_presences(
+            &state.local_client,
+            &cfg.endpoints.local_base,
+            &lockfile.basic_auth,
+        ),
+        endpoints::get_names_from_puuids(&state.remote_client, &cfg, &needed_puuids),
+        mmr_stream.collect::<HashMap<String, (Option<Value>, Option<Value>)>>()
     );
 
-    let name_map: HashMap<String, (String, String)> = names_raw.into_iter()
+    let presences = presences_raw
+        .as_ref()
+        .map(party::parse_presences)
+        .unwrap_or_default();
+
+    let mut name_map: HashMap<String, (String, String)> = names_raw
+        .into_iter()
         .filter_map(|n| {
             let s = n["Subject"].as_str()?.to_string();
-            let name = n["GameName"].as_str().or_else(|| n["DisplayName"].as_str()).unwrap_or("").to_string();
+            let name = n["GameName"]
+                .as_str()
+                .or_else(|| n["DisplayName"].as_str())
+                .unwrap_or("")
+                .to_string();
             let tag = n["TagLine"].as_str().unwrap_or("").to_string();
             Some((s, (name, tag)))
         })
         .collect();
+
+    for (puuid, p) in &pregame_teammates {
+        name_map
+            .entry(puuid.clone())
+            .or_insert_with(|| (p.name.clone(), p.tag.clone()));
+    }
 
     // Build intermediate player data and collect recent match IDs
     struct RawPlayer {
@@ -463,35 +705,85 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
     let mut raw_built: Vec<RawPlayer> = Vec::new();
     for p in &raw_players {
-        let puuid = match p["Subject"].as_str().or_else(|| p["PlayerIdentity"]["Subject"].as_str()) {
+        let puuid = match p["Subject"]
+            .as_str()
+            .or_else(|| p["PlayerIdentity"]["Subject"].as_str())
+        {
             Some(s) if !s.is_empty() => s,
             _ => continue,
         };
+
+        // Teammates previously fetched in PREGAME: reuse their calculated stats,
+        // updating agent ID / team ID / account level from core-game.
+        if let Some(cached_player) = pregame_teammates.get(puuid) {
+            let agent_id = p["CharacterID"]
+                .as_str()
+                .or_else(|| p["CharacterSelectionID"].as_str())
+                .unwrap_or("")
+                .to_string();
+            let team_id = p["TeamID"].as_str().unwrap_or("").to_string();
+            let identity = &p["PlayerIdentity"];
+            let account_level = identity["AccountLevel"].as_u64().unwrap_or(0) as u32;
+
+            let mut built = cached_player.clone();
+            if !agent_id.is_empty() {
+                built.agent_id = agent_id.clone();
+                built.agent_name = AGENT_MAP
+                    .get(&agent_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown".to_string());
+            }
+            if !team_id.is_empty() {
+                built.team_id = team_id;
+            }
+            if account_level > 0 {
+                built.account_level = account_level;
+            }
+            built.party_number = None;
+
+            raw_built.push(RawPlayer {
+                built,
+                recent_match_ids: Vec::new(),
+            });
+            continue;
+        }
+
         let (mmr_raw, comp_raw) = match mmr_comp_results.get(puuid) {
             Some(v) => v,
             None => continue,
         };
 
-        let mmr_data = mmr_raw.as_ref()
+        let mmr_data = mmr_raw
+            .as_ref()
             .filter(|v| v["httpStatus"].is_null() || v["httpStatus"].as_u64().unwrap_or(0) < 400);
         let latest_comp = mmr_data.map(|m| &m["LatestCompetitiveUpdate"]);
         let seasonal_info = mmr_data
             .map(|m| &m["QueueSkills"]["competitive"]["SeasonalInfoBySeasonID"])
             .unwrap_or(&Value::Null);
 
-        let recent_matches: Vec<Value> = comp_raw.as_ref()
+        let recent_matches: Vec<Value> = comp_raw
+            .as_ref()
             .and_then(|c| c["Matches"].as_array())
             .cloned()
             .unwrap_or_default();
 
-        let rank = latest_comp.and_then(|lc| lc["TierAfterUpdate"].as_u64()).unwrap_or(0) as u32;
-        let previous_rank = latest_comp.and_then(|lc| lc["TierBeforeUpdate"].as_u64()).unwrap_or(0) as u32;
+        let rank = latest_comp
+            .and_then(|lc| lc["TierAfterUpdate"].as_u64())
+            .unwrap_or(0) as u32;
+        let previous_rank = latest_comp
+            .and_then(|lc| lc["TierBeforeUpdate"].as_u64())
+            .unwrap_or(0) as u32;
 
         let mut peak_rank = player::get_peak_rank(seasonal_info, &recent_matches, latest_comp);
-        if rank > peak_rank && rank <= 27 { peak_rank = rank; }
-        if previous_rank > peak_rank && previous_rank <= 27 { peak_rank = previous_rank; }
+        if rank > peak_rank && rank <= 27 {
+            peak_rank = rank;
+        }
+        if previous_rank > peak_rank && previous_rank <= 27 {
+            peak_rank = previous_rank;
+        }
 
-        let latest_match_season_id = recent_matches.first()
+        let latest_match_season_id = recent_matches
+            .first()
             .and_then(|m| m["SeasonID"].as_str())
             .unwrap_or("")
             .to_string();
@@ -501,10 +793,15 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             player::get_current_season_id(seasonal_info, &season_id)
         };
 
-        let current_season_data = current_season.as_deref()
+        let current_season_data = current_season
+            .as_deref()
             .and_then(|cs| seasonal_info[cs].as_object().map(|_| &seasonal_info[cs]));
         let current_season_wins = current_season_data
-            .and_then(|d| d["NumberOfWinsWithPlacements"].as_u64().or_else(|| d["NumberOfWins"].as_u64()))
+            .and_then(|d| {
+                d["NumberOfWinsWithPlacements"]
+                    .as_u64()
+                    .or_else(|| d["NumberOfWins"].as_u64())
+            })
             .unwrap_or(0) as u32;
         let current_season_games = current_season_data
             .and_then(|d| d["NumberOfGames"].as_u64())
@@ -512,35 +809,45 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         let is_current_act_rank = current_season.is_some() && current_season_games > 0;
         let act_winrate = if current_season_games > 0 {
             player::round_pct(current_season_wins as f64 / current_season_games as f64)
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         // Collect current-act match IDs (newest first, stop at season boundary)
-        let current_act_matches: Vec<&Value> = recent_matches.iter()
+        let current_act_matches: Vec<&Value> = recent_matches
+            .iter()
             .take_while(|m| {
-                current_season.as_deref()
+                current_season
+                    .as_deref()
                     .map(|cs| m["SeasonID"].as_str() == Some(cs))
                     .unwrap_or(true)
             })
             .collect();
 
-        let latest_update = current_act_matches.first().copied()
+        let latest_update = current_act_matches
+            .first()
+            .copied()
             .or_else(|| recent_matches.first());
-        let rr = latest_comp.and_then(|lc| lc["RankedRatingAfterUpdate"].as_i64())
+        let rr = latest_comp
+            .and_then(|lc| lc["RankedRatingAfterUpdate"].as_i64())
             .or_else(|| latest_update.and_then(|u| u["RankedRatingAfterUpdate"].as_i64()))
             .unwrap_or(0) as i32;
-        let earned_rr = latest_comp.and_then(|lc| lc["RankedRatingEarned"].as_i64())
+        let earned_rr = latest_comp
+            .and_then(|lc| lc["RankedRatingEarned"].as_i64())
             .or_else(|| latest_update.and_then(|u| u["RankedRatingEarned"].as_i64()))
             .unwrap_or(0) as i32;
         let leaderboard_position = latest_update
             .and_then(|u| u["LeaderboardPosition"].as_u64())
             .unwrap_or(0) as u32;
 
-        let recent_match_ids: Vec<String> = current_act_matches.iter()
+        let recent_match_ids: Vec<String> = current_act_matches
+            .iter()
             .filter_map(|m| m["MatchID"].as_str())
             .map(|s| s.to_string())
             .collect();
 
-        let agent_id = p["CharacterID"].as_str()
+        let agent_id = p["CharacterID"]
+            .as_str()
             .or_else(|| p["CharacterSelectionID"].as_str())
             .unwrap_or("")
             .to_string();
@@ -558,31 +865,55 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 name: display_name,
                 tag: tag_line,
                 agent_id: agent_id.clone(),
-                agent_name: AGENT_MAP.get(&agent_id).cloned().unwrap_or_else(|| "Unknown".to_string()),
+                agent_name: AGENT_MAP
+                    .get(&agent_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown".to_string()),
                 team_id,
                 account_level,
                 rank,
-                rank_name: RANK_MAP.get(&(rank as u64)).cloned().unwrap_or_else(|| "Unranked".to_string()),
+                rank_name: RANK_MAP
+                    .get(&(rank as u64))
+                    .cloned()
+                    .unwrap_or_else(|| "Unranked".to_string()),
                 peak_rank,
-                peak_rank_name: RANK_MAP.get(&(peak_rank as u64)).cloned().unwrap_or_else(|| "Unranked".to_string()),
+                peak_rank_name: RANK_MAP
+                    .get(&(peak_rank as u64))
+                    .cloned()
+                    .unwrap_or_else(|| "Unranked".to_string()),
                 previous_rank,
-                rr, earned_rr, leaderboard_position,
-                headshots: 0, bodyshots: 0, legshots: 0, headshot_percent: 0.0,
+                rr,
+                earned_rr,
+                leaderboard_position,
+                headshots: 0,
+                bodyshots: 0,
+                legshots: 0,
+                headshot_percent: 0.0,
                 winrate: act_winrate,
-                kd: 0.0, kills: 0.0, deaths: 0.0, assists: 0.0,
-                acs: 0, adr: 0.0,
-                current_season_wins, current_season_games,
+                kd: 0.0,
+                kills: 0.0,
+                deaths: 0.0,
+                assists: 0.0,
+                acs: 0,
+                adr: 0.0,
+                current_season_wins,
+                current_season_games,
                 is_current_act_rank,
                 recent_games_count: 0,
-                last_match_kills: 0, last_match_deaths: 0, last_match_assists: 0, last_match_kd: 0.0,
+                last_match_kills: 0,
+                last_match_deaths: 0,
+                last_match_assists: 0,
+                last_match_kd: 0.0,
                 recent_results: vec![],
-                party_id: None, party_number: None, party_size: None,
+                party_id: None,
+                party_number: None,
+                party_size: None,
             },
             recent_match_ids,
         });
     }
 
-    // 9. Fetch match details (only uncached ones)
+    // 9. Fetch match details (check memory LRU, then disk cache, then network)
     let mut needed_ids: HashSet<String> = HashSet::new();
     {
         let mut detail_cache = state.detail_cache.lock().await;
@@ -595,9 +926,39 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         }
     }
 
+    // Check persistent disk cache for any IDs missing from memory LRU in parallel
+    if let Some(ref c_dir) = state.cache_dir {
+        let c_dir_clone = c_dir.clone();
+        let disk_results: Vec<(String, Option<Value>)> = stream::iter(needed_ids.clone())
+            .map(move |mid| {
+                let dir = c_dir_clone.clone();
+                async move {
+                    let val = disk_cache::read_match_detail(&dir, &mid).await;
+                    (mid, val)
+                }
+            })
+            .buffer_unordered(16)
+            .collect()
+            .await;
+
+        let mut disk_hits = Vec::new();
+        for (mid, maybe_val) in disk_results {
+            if let Some(val) = maybe_val {
+                needed_ids.remove(&mid);
+                disk_hits.push((mid, val));
+            }
+        }
+        if !disk_hits.is_empty() {
+            let mut detail_cache = state.detail_cache.lock().await;
+            for (mid, val) in disk_hits {
+                detail_cache.put(mid, Arc::new(val));
+            }
+        }
+    }
+
     let remote_client2 = state.remote_client.clone();
     let cfg_clone2 = cfg.clone();
-    let fetched_details: Vec<(String, Option<Value>)> = stream::iter(needed_ids.into_iter())
+    let fetched_details: Vec<(String, Option<Value>)> = stream::iter(needed_ids)
         .map(move |mid| {
             let remote = remote_client2.clone();
             let cfg_ref = cfg_clone2.clone();
@@ -610,18 +971,33 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         .collect()
         .await;
 
-    // Write new details into LRU cache
+    // Write newly fetched details into memory LRU and persistent disk cache
     {
         let mut detail_cache = state.detail_cache.lock().await;
-        for (mid, detail) in fetched_details {
+        for (mid, detail) in &fetched_details {
             if let Some(d) = detail {
-                detail_cache.put(mid, Arc::new(d));
+                detail_cache.put(mid.clone(), Arc::new(d.clone()));
             }
         }
     }
 
+    let has_new_details = fetched_details.iter().any(|(_, d)| d.is_some());
+    if has_new_details {
+        if let Some(ref c_dir) = state.cache_dir {
+            let c_dir = c_dir.clone();
+            tokio::spawn(async move {
+                for (mid, detail) in fetched_details {
+                    if let Some(d) = detail {
+                        disk_cache::write_match_detail(&c_dir, &mid, &d).await;
+                    }
+                }
+                disk_cache::prune_cache(&c_dir, disk_cache::DEFAULT_MAX_DISK_ENTRIES).await;
+            });
+        }
+    }
+
     // 10. Collect Arc<Value> references under lock, then drop lock immediately (C1)
-    let (mut player_details_map, ordered_details): (HashMap<String, Vec<Arc<Value>>>, Vec<Arc<Value>>) = {
+    let (mut player_details_map, ordered_details) = {
         let detail_cache = state.detail_cache.lock().await;
         let mut player_map = HashMap::new();
         let mut seen = HashSet::new();
@@ -645,7 +1021,9 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     // Now detail_cache lock is released! Do CPU stats computation:
     let mut built_players: Vec<ValorantPlayer> = Vec::with_capacity(raw_built.len());
     for rp in raw_built {
-        let details = player_details_map.remove(&rp.built.puuid).unwrap_or_default();
+        let details = player_details_map
+            .remove(&rp.built.puuid)
+            .unwrap_or_default();
         let mut player = rp.built;
 
         if !details.is_empty() {
@@ -664,7 +1042,9 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             }
 
             // Recent results
-            player.recent_results = details.iter().take(5)
+            player.recent_results = details
+                .iter()
+                .take(5)
                 .map(|d| stats::get_match_result(d, &player.puuid))
                 .collect();
 
@@ -691,38 +1071,49 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     party::enrich_party_from_match_history(&mut players_with_party, &ordered_details);
     party::assign_party_numbers(&mut players_with_party, &presences);
 
-     // 12. Resolve map / mode / side
-     let map_name = resolve_map_name(&map_id);
-     let (game_mode_name, is_deathmatch, mode_keyword) =
-         resolve_game_mode_name(&game_mode_id, &game_mode, is_ranked);
+    // 12. Resolve map / mode / side
+    let map_name = resolve_map_name(&map_id);
+    let (game_mode_name, is_deathmatch, mode_keyword) =
+        resolve_game_mode_name(&game_mode_id, &game_mode, is_ranked);
 
-     let starting_side = if resolved_game_state == "PREGAME" {
-         side::resolve_starting_side(ally_team_id.as_deref(), &game_mode_id, &mode_keyword)
-     } else { None };
+    let starting_side = if resolved_game_state == "PREGAME" {
+        side::resolve_starting_side(ally_team_id.as_deref(), &game_mode_id, &mode_keyword)
+    } else {
+        None
+    };
 
-     let match_info = MatchInfo {
-         match_id: resolved_match_id.clone(),
-         map_id, map_name, game_mode, game_mode_id, game_mode_name, is_deathmatch,
-         server, is_ranked, game_state: resolved_game_state.clone(), season_id,
-         starting_side,
-     };
+    let match_info = MatchInfo {
+        match_id: resolved_match_id.clone(),
+        map_id,
+        map_name,
+        game_mode,
+        game_mode_id,
+        game_mode_name,
+        is_deathmatch,
+        server,
+        is_ranked,
+        game_state: resolved_game_state.clone(),
+        season_id,
+        starting_side,
+    };
 
-     // 13. Store in match cache
-     *state.match_cache.lock().await = Some(MatchCache {
-         match_id: resolved_match_id,
-         game_state: resolved_game_state.clone(),
-         players: players_with_party.clone(),
-         match_info: match_info.clone(),
-     });
+    // 13. Store in match cache
+    *state.match_cache.lock().await = Some(MatchCache {
+        match_id: resolved_match_id,
+        game_state: resolved_game_state.clone(),
+        players: players_with_party.clone(),
+        match_info: match_info.clone(),
+        self_puuid: cfg.puuid.clone(),
+    });
 
-     Ok(ApiResponse {
-         game_state: resolved_game_state,
-         r#match: Some(match_info),
-         players: Some(players_with_party),
-         self_puuid: Some(cfg.puuid),
-         error: None,
-     })
- }
+    Ok(ApiResponse {
+        game_state: resolved_game_state,
+        r#match: Some(match_info),
+        players: Some(players_with_party),
+        self_puuid: Some(cfg.puuid),
+        error: None,
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -749,11 +1140,13 @@ mod tests {
 
     #[test]
     fn test_strip_and_extract() {
-        let (stripped, keyword) = strip_and_extract("/Game/GameModes/Bomb/BombGameMode.BombGameMode_C");
+        let (stripped, keyword) =
+            strip_and_extract("/Game/GameModes/Bomb/BombGameMode.BombGameMode_C");
         assert_eq!(stripped, "/Game/GameModes/Bomb/BombGameMode");
         assert_eq!(keyword, "Bomb");
 
-        let (_stripped_lower, keyword_lower) = strip_and_extract("/game/gamemodes/bomb/bombgamemode.bombgamemode_c");
+        let (_stripped_lower, keyword_lower) =
+            strip_and_extract("/game/gamemodes/bomb/bombgamemode.bombgamemode_c");
         assert_eq!(keyword_lower, "bomb");
 
         let (stripped2, keyword2) = strip_and_extract("competitive");
@@ -780,10 +1173,15 @@ mod tests {
         assert!(is_dm);
 
         // Standard mode resolved by is_ranked
-        let (name_ranked, _, _) = resolve_game_mode_name("", "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C", true);
+        let (name_ranked, _, _) =
+            resolve_game_mode_name("", "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C", true);
         assert_eq!(name_ranked, "Competitive");
 
-        let (name_unranked, _, _) = resolve_game_mode_name("", "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C", false);
+        let (name_unranked, _, _) = resolve_game_mode_name(
+            "",
+            "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
+            false,
+        );
         assert_eq!(name_unranked, "Unrated");
     }
 }

@@ -20,8 +20,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs", "macros", "io-util"] }
 futures = "0.3"
 
-# HTTP — rustls so no OpenSSL dep; danger_accept_invalid_certs for loopback
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# HTTP — rustls with ring provider (no OpenSSL, no aws-lc C library)
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 # Utilities
 base64 = "0.22"

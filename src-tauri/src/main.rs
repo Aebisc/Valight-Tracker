@@ -11,7 +11,6 @@ fn main() {
             let log_file = log_dir.join("crash.log");
             let _ = std::fs::write(log_file, format!("PANIC: {}\n", info));
         }
-
     }));
 
     let _ = tracing_subscriber::fmt()

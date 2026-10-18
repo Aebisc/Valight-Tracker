@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useToast } from "../components/toast";
 import { fetchMatchData } from "@/lib/backend";
+import { sharePlayers, shareMatch } from "@/lib/share-structure";
 import type { Player, MatchInfo, ApiResponse, GameState } from "@/lib/types";
 
 const POLL_INTERVALS: Record<GameState, number> = {
@@ -31,6 +32,7 @@ export interface MatchPollingResult {
   reconnecting: boolean;
   stateStartTime: number | null;
   refreshMatch: () => void;
+  hardRefreshMatch: () => void;
 }
 
 export function useMatchPolling(): MatchPollingResult {
@@ -50,6 +52,7 @@ export function useMatchPolling(): MatchPollingResult {
   const failCountRef = useRef<number>(0);
   const retryPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef<boolean>(false);
+  const requestIdRef = useRef<number>(0);
   const { toast } = useToast();
 
   const fetchMatchRef = useRef<(manual?: boolean) => Promise<void>>(async () => {});
@@ -60,16 +63,22 @@ export function useMatchPolling(): MatchPollingResult {
     intervalRef.current = setInterval(() => fetchMatchRef.current(), ms);
   }, []);
 
-  const fetchMatch = useCallback(async (manual = false) => {
+  const fetchMatch = useCallback(async (manual = false, force = false) => {
     if (isFetchingRef.current && !manual) return;
     isFetchingRef.current = true;
     if (manual) setRefreshing(true);
+    const reqId = ++requestIdRef.current;
+
     try {
-      const data: ApiResponse = await fetchMatchData(manual);
+      const data: ApiResponse = await fetchMatchData(force);
+      // BUG-01: Discard stale response if a newer request was dispatched
+      if (reqId !== requestIdRef.current) return;
+
       setError(data.error ?? "");
       setGameState(data.gameState);
-      setMatchInfo(data.match ?? null);
-      setPlayers(data.players ?? []);
+      // BUG-02: Structural sharing prevents re-renders when data has not changed
+      setMatchInfo((prev) => shareMatch(prev, data.match ?? null));
+      setPlayers((prev) => sharePlayers(prev, data.players ?? []));
       setSelfPuuid(data.selfPuuid ?? "");
       setConnected(true);
       setLastUpdated(new Date());
@@ -85,6 +94,8 @@ export function useMatchPolling(): MatchPollingResult {
         } else {
           setStateStartTime(null);
         }
+      } else if (manual) {
+        resetInterval(data.gameState);
       }
 
       const wasInMenus = prevGameState.current === "MENUS" || prevGameState.current === "OFFLINE";
@@ -103,6 +114,9 @@ export function useMatchPolling(): MatchPollingResult {
 
       prevGameState.current = data.gameState;
     } catch (e) {
+      // BUG-01: Newer request wins; discard error if request is stale
+      if (reqId !== requestIdRef.current) return;
+
       console.error("[fetchMatch] error:", e);
       failCountRef.current += 1;
       if (failCountRef.current >= 3) {
@@ -135,9 +149,12 @@ export function useMatchPolling(): MatchPollingResult {
         }, delay);
       }
     } finally {
-      isFetchingRef.current = false;
-      setLoading(false);
-      setRefreshing(false);
+      // BUG-01: Only release fetching state if this request is still the newest
+      if (reqId === requestIdRef.current) {
+        isFetchingRef.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [resetInterval, toast]);
 
@@ -151,16 +168,25 @@ export function useMatchPolling(): MatchPollingResult {
       retryPendingRef.current = null;
     }
     if (intervalRef.current) clearInterval(intervalRef.current);
-    fetchMatch(true).then(() => {
-      resetInterval(prevGameState.current);
-    });
-  }, [fetchMatch, resetInterval]);
+    fetchMatch(true, false);
+  }, [fetchMatch]);
+
+  const hardRefreshMatch = useCallback(() => {
+    if (retryPendingRef.current) {
+      clearTimeout(retryPendingRef.current);
+      retryPendingRef.current = null;
+    }
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    fetchMatch(true, true);
+  }, [fetchMatch]);
 
   useEffect(() => {
     fetchMatchRef.current = fetchMatch;
     fetchMatch();
     intervalRef.current = setInterval(() => fetchMatchRef.current(), getPollingInterval("OFFLINE"));
     return () => {
+      // BUG-01: Discard any pending in-flight response on unmount
+      requestIdRef.current++;
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (retryPendingRef.current) clearTimeout(retryPendingRef.current);
     };
@@ -169,9 +195,15 @@ export function useMatchPolling(): MatchPollingResult {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        // BUG-01: Cancel in-flight polling when hidden
+        requestIdRef.current++;
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
+        }
+        if (retryPendingRef.current) {
+          clearTimeout(retryPendingRef.current);
+          retryPendingRef.current = null;
         }
       } else {
         fetchMatchRef.current();
@@ -195,5 +227,6 @@ export function useMatchPolling(): MatchPollingResult {
     reconnecting,
     stateStartTime,
     refreshMatch,
+    hardRefreshMatch,
   };
 }

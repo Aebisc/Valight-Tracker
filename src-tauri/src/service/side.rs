@@ -26,12 +26,16 @@ pub fn resolve_starting_side(
     mode_keyword: &str,
 ) -> Option<TeamSide> {
     let team_id = team_id?;
-    if team_id.is_empty() { return None; }
-    if !is_side_eligible(queue_id, mode_keyword) { return None; }
+    if team_id.is_empty() {
+        return None;
+    }
+    if !is_side_eligible(queue_id, mode_keyword) {
+        return None;
+    }
     match team_id.to_lowercase().as_str() {
         "blue" => Some(TeamSide::Defence),
-        "red"  => Some(TeamSide::Attack),
-        _      => None,
+        "red" => Some(TeamSide::Attack),
+        _ => None,
     }
 }
 
@@ -57,10 +61,7 @@ mod tests {
 
     #[test]
     fn deathmatch_returns_none() {
-        assert_eq!(
-            resolve_starting_side(Some("Blue"), "deathmatch", ""),
-            None
-        );
+        assert_eq!(resolve_starting_side(Some("Blue"), "deathmatch", ""), None);
     }
 
     #[test]

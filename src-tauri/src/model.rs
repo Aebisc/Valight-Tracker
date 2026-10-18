@@ -119,13 +119,22 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn auth(msg: impl Into<String>) -> Self {
-        Self { kind: ApiErrorKind::Auth, message: msg.into() }
+        Self {
+            kind: ApiErrorKind::Auth,
+            message: msg.into(),
+        }
     }
     pub fn transient(msg: impl Into<String>) -> Self {
-        Self { kind: ApiErrorKind::Transient, message: msg.into() }
+        Self {
+            kind: ApiErrorKind::Transient,
+            message: msg.into(),
+        }
     }
     pub fn internal(msg: impl Into<String>) -> Self {
-        Self { kind: ApiErrorKind::Internal, message: msg.into() }
+        Self {
+            kind: ApiErrorKind::Internal,
+            message: msg.into(),
+        }
     }
 }
 
@@ -142,7 +151,9 @@ impl ApiResponse {
         Self {
             game_state: "OFFLINE".into(),
             error: Some("Valorant is not running".into()),
-            r#match: None, players: None, self_puuid: None,
+            r#match: None,
+            players: None,
+            self_puuid: None,
         }
     }
 
@@ -160,7 +171,9 @@ impl ApiResponse {
         Self {
             game_state: "ERROR".into(),
             error: Some(msg),
-            r#match: None, players: None, self_puuid: None,
+            r#match: None,
+            players: None,
+            self_puuid: None,
         }
     }
 }

@@ -49,12 +49,16 @@ pub fn get_peak_rank(
             // 1. CompetitiveTier
             if let Some(t) = season["CompetitiveTier"].as_u64() {
                 let t = t as u32;
-                if t > peak && t <= 27 { peak = t; }
+                if t > peak && t <= 27 {
+                    peak = t;
+                }
             }
             // 2. Rank (peak act rank)
             if let Some(t) = season["Rank"].as_u64() {
                 let t = t as u32;
-                if t > peak && t <= 27 { peak = t; }
+                if t > peak && t <= 27 {
+                    peak = t;
+                }
             }
             // 3. WinsByTier
             if let Some(wbt) = season["WinsByTier"].as_object() {
@@ -72,20 +76,32 @@ pub fn get_peak_rank(
     // 4. Latest competitive update
     if let Some(lc) = latest_comp {
         if let Some(t) = lc["TierAfterUpdate"].as_u64() {
-            let t = t as u32; if t > peak && t <= 27 { peak = t; }
+            let t = t as u32;
+            if t > peak && t <= 27 {
+                peak = t;
+            }
         }
         if let Some(t) = lc["TierBeforeUpdate"].as_u64() {
-            let t = t as u32; if t > peak && t <= 27 { peak = t; }
+            let t = t as u32;
+            if t > peak && t <= 27 {
+                peak = t;
+            }
         }
     }
 
     // 5. Recent matches
     for m in recent_matches {
         if let Some(t) = m["TierAfterUpdate"].as_u64() {
-            let t = t as u32; if t > peak && t <= 27 { peak = t; }
+            let t = t as u32;
+            if t > peak && t <= 27 {
+                peak = t;
+            }
         }
         if let Some(t) = m["TierBeforeUpdate"].as_u64() {
-            let t = t as u32; if t > peak && t <= 27 { peak = t; }
+            let t = t as u32;
+            if t > peak && t <= 27 {
+                peak = t;
+            }
         }
     }
 
@@ -141,9 +157,7 @@ mod tests {
 
     #[test]
     fn peak_rank_from_recent_matches() {
-        let matches = vec![
-            json!({ "TierAfterUpdate": 22, "TierBeforeUpdate": 21 }),
-        ];
+        let matches = vec![json!({ "TierAfterUpdate": 22, "TierBeforeUpdate": 21 })];
         assert_eq!(get_peak_rank(&json!({}), &matches, None), 22);
     }
 
@@ -162,7 +176,10 @@ mod tests {
             "s2023-1": { "NumberOfGames": 10 },
             "s2024-1": { "NumberOfGames": 5 },
         });
-        assert_eq!(get_current_season_id(&info, ""), Some("s2024-1".to_string()));
+        assert_eq!(
+            get_current_season_id(&info, ""),
+            Some("s2024-1".to_string())
+        );
     }
 
     #[test]

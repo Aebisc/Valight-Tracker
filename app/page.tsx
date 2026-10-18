@@ -22,6 +22,7 @@ export default function Home() {
     reconnecting,
     stateStartTime,
     refreshMatch: refresh,
+    hardRefreshMatch: hardRefresh,
   } = useMatchPolling();
 
   const {
@@ -162,6 +163,45 @@ export default function Home() {
                 </svg>
                 Refresh
               </button>
+
+              <button
+                onClick={hardRefresh}
+                disabled={refreshing}
+                className="btn-ghost"
+                title="Force a complete re-fetch from Riot API"
+                aria-label={refreshing ? "Refetching data" : "Refetch data"}
+                style={{
+                  padding: "10px 18px",
+                  fontSize: 12,
+                  transition: "all 0.2s ease, transform 0.15s cubic-bezier(0.22, 1, 0.36, 1)",
+                }}
+                onMouseDown={(e) => {
+                  if (!refreshing) e.currentTarget.style.transform = "scale(0.93)";
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={refreshing ? "a-spin" : ""}
+                >
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                Refetch
+              </button>
             </div>
 
             {selfPuuid && (() => {
@@ -174,7 +214,14 @@ export default function Home() {
           <div className="a-enter" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             {matchInfo && (
               <div style={{ marginBottom: 20 }}>
-                <MatchHeader matchInfo={matchInfo} gameState={gameState} onRefresh={refresh} refreshing={refreshing} stateStartTime={stateStartTime ?? undefined} />
+                <MatchHeader
+                  matchInfo={matchInfo}
+                  gameState={gameState}
+                  onRefresh={refresh}
+                  onHardRefresh={hardRefresh}
+                  refreshing={refreshing}
+                  stateStartTime={stateStartTime ?? undefined}
+                />
               </div>
             )}
 

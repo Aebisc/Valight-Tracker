@@ -1,7 +1,7 @@
 use std::time::Duration;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path};
 use valorant_tracker::riot::client::{build_local_client, safe_get_json, RiotResult};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
 async fn test_rate_limit_retry_succeeds() {
@@ -16,7 +16,7 @@ async fn test_rate_limit_retry_succeeds() {
         .respond_with(
             ResponseTemplate::new(429)
                 .insert_header("Retry-After", "1")
-                .set_body_json(serde_json::json!({"message": "rate limited"}))
+                .set_body_json(serde_json::json!({"message": "rate limited"})),
         )
         .up_to_n_times(1)
         .mount(&server)
@@ -33,7 +33,10 @@ async fn test_rate_limit_retry_succeeds() {
     let res = safe_get_json(&client, &url, &headers).await;
     let elapsed = start.elapsed();
 
-    assert!(elapsed >= Duration::from_millis(900), "Should have waited for Retry-After duration");
+    assert!(
+        elapsed >= Duration::from_millis(900),
+        "Should have waited for Retry-After duration"
+    );
     match res {
         RiotResult::Ok(val) => {
             assert_eq!(val["status"], "ok");
@@ -53,7 +56,7 @@ async fn test_rate_limit_exceeded_returns_rate_limited() {
         .respond_with(
             ResponseTemplate::new(429)
                 .insert_header("Retry-After", "1")
-                .set_body_json(serde_json::json!({"message": "still limited"}))
+                .set_body_json(serde_json::json!({"message": "still limited"})),
         )
         .mount(&server)
         .await;

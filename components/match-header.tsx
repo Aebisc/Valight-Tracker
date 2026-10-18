@@ -73,13 +73,21 @@ interface MatchHeaderProps {
   matchInfo: MatchInfo;
   gameState: GameState;
   onRefresh: () => void;
+  onHardRefresh?: () => void;
   refreshing: boolean;
   stateStartTime?: number;
 }
 
 const tagTransition = "all 0.2s ease";
 
-export default function MatchHeader({ matchInfo, gameState, onRefresh, refreshing, stateStartTime }: MatchHeaderProps) {
+export default function MatchHeader({
+  matchInfo,
+  gameState,
+  onRefresh,
+  onHardRefresh,
+  refreshing,
+  stateStartTime,
+}: MatchHeaderProps) {
   const live = gameState === "INGAME";
   const showTimer = gameState === "PREGAME" || gameState === "INGAME";
   return (
@@ -237,6 +245,45 @@ export default function MatchHeader({ matchInfo, gameState, onRefresh, refreshin
           </svg>
           Refresh
         </button>
+
+        {onHardRefresh && (
+          <button
+            onClick={onHardRefresh}
+            disabled={refreshing}
+            className="btn-ghost"
+            title="Force a complete re-fetch of all players from Riot API"
+            aria-label={refreshing ? "Refetching all match data" : "Refetch all match data"}
+            style={{
+              transition: "all 0.2s ease, transform 0.15s cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+            onMouseDown={(e) => {
+              if (!refreshing) e.currentTarget.style.transform = "scale(0.93)";
+            }}
+            onMouseUp={(e) => {
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+          >
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={refreshing ? "a-spin" : ""}
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            Refetch
+          </button>
+        )}
       </div>
     </div>
   );
