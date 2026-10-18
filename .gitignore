@@ -1,37 +1,62 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
+# Icons & Static Assets
+icons/
+**/icons/
+public/
+assets/
+*.ico
+*.icns
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.webp
 
-# Next.js build and static export outputs
+# Package Lockfiles
+package-lock.json
+Cargo.lock
+yarn.lock
+pnpm-lock.yaml
+
+# Build Outputs & Bundles
+node_modules/
 .next/
 out/
+dist/
 build/
-
-# Tauri / Rust Cargo build outputs
 src-tauri/target/
 **/target/
 src-tauri/binaries/
 src-tauri/resources/server/
 src-tauri/gen/
 
-# Local environment files & logs
+# Local Caches & Tooling
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+.pnp
+.pnp.js
+
+# Logs & Environment Files
+*.log
 .env
 .env*.local
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# OS & Editor artifacts
-.DS_Store
-Thumbs.db
+# Documentation & Markdown (uncomment if you want docs ignored too)
+# *.md
+# docs/
+Setup.md
+MANUAL_RELEASE.md
+AGENTS.md
+CLAUDE.md
+
+# Editor & OS Artifacts
 .vscode/
 .idea/
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
+.DS_Store
+Thumbs.db
 
 # Security, keys & update artifacts
 *.pem
@@ -41,9 +66,3 @@ latest.json
 
 # Test fixtures — raw/ has live Riot tokens, NEVER commit
 src-tauri/fixtures/raw/
-
-# Documentation & internal files
-Setup.md
-MANUAL_RELEASE.md
-AGENTS.md
-CLAUDE.md
