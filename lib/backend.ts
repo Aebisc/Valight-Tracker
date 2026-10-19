@@ -49,10 +49,5 @@ export async function fetchMatchData(force = false): Promise<ApiResponse> {
 
   }
 
-  // Browser dev mode / fallback
-  const res = await fetch(force ? "/api/match?force=1" : "/api/match");
-  if (!res.ok) {
-    throw new Error(`HTTP error ${res.status}`);
-  }
-  return await res.json();
+  throw new Error("VaLight Tracker must be run inside the Tauri desktop application.");
 }

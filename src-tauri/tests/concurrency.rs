@@ -513,7 +513,6 @@ async fn test_pregame_to_ingame_preserves_teammates_and_queries_only_enemies() {
             rank_name: "Diamond 3".to_string(),
             peak_rank: 21,
             peak_rank_name: "Immortal 1".to_string(),
-            previous_rank: 17,
             rr: 75,
             earned_rr: 20,
             leaderboard_position: 0,

@@ -253,8 +253,11 @@ pub fn slim_match_detail(raw: &Value) -> Value {
 mod tests {
     use super::*;
 
+    static TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn test_disk_cache_roundtrip() {
+        let _guard = TEST_MUTEX.lock().await;
         let temp_dir = std::env::temp_dir().join("valight_test_cache_roundtrip");
         let _ = fs::remove_dir_all(&temp_dir).await;
 
@@ -282,6 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disk_cache_prune() {
+        let _guard = TEST_MUTEX.lock().await;
         let temp_dir = std::env::temp_dir().join("valight_test_cache_prune");
         let _ = fs::remove_dir_all(&temp_dir).await;
 
@@ -306,6 +310,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_maybe_prune_cache_threshold() {
+        let _guard = TEST_MUTEX.lock().await;
         let temp_dir = std::env::temp_dir().join("valight_test_maybe_prune");
         let _ = fs::remove_dir_all(&temp_dir).await;
 

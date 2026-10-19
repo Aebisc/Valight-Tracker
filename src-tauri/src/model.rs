@@ -20,7 +20,6 @@ pub struct ValorantPlayer {
     pub rank_name: String,
     pub peak_rank: u32,
     pub peak_rank_name: String,
-    pub previous_rank: u32,
     pub rr: i32,
     pub earned_rr: i32,
     pub leaderboard_position: u32,

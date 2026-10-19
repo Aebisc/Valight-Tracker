@@ -187,6 +187,7 @@ export function useMatchPolling(): MatchPollingResult {
     return () => {
       // BUG-01: Discard any pending in-flight response on unmount
       requestIdRef.current++;
+      isFetchingRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (retryPendingRef.current) clearTimeout(retryPendingRef.current);
     };
@@ -197,6 +198,8 @@ export function useMatchPolling(): MatchPollingResult {
       if (document.hidden) {
         // BUG-01: Cancel in-flight polling when hidden
         requestIdRef.current++;
+        isFetchingRef.current = false;
+        setRefreshing(false);
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;

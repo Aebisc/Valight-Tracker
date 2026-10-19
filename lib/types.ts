@@ -10,7 +10,6 @@ export interface ValorantPlayer {
   rankName: string;
   peakRank: number;
   peakRankName: string;
-  previousRank: number;
   rr: number;
   earnedRr: number;
   leaderboardPosition: number;
@@ -61,22 +60,4 @@ export interface ApiResponse {
   match?: MatchInfo;
   players?: Player[];
   selfPuuid?: string;
-}
-
-export interface LockfileData {
-  name: string;
-  pid: string;
-  port: string;
-  password: string;
-  protocol: string;
-}
-
-export interface ApiConfig {
-  pdUrl: string;
-  glzUrl: string;
-  region: string;
-  shard: string;
-  puuid: string;
-  headers: Record<string, string>;
-  version: string;
 }

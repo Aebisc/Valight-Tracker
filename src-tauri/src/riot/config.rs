@@ -106,6 +106,14 @@ struct CacheEntry {
 
 static CONFIG_CACHE: Lazy<Mutex<Option<CacheEntry>>> = Lazy::new(|| Mutex::new(None));
 
+struct LogMetaCache {
+    cache_key: String,
+    region: String,
+    version: String,
+}
+
+static LOG_META_CACHE: Lazy<Mutex<Option<LogMetaCache>>> = Lazy::new(|| Mutex::new(None));
+
 pub async fn clear_config_cache() {
     *CONFIG_CACHE.lock().await = None;
 }
@@ -286,7 +294,33 @@ pub async fn get_api_config_with_client_and_endpoints(
         return Err(ConfigError::EntitlementsUnavailable);
     }
 
-    let (region, version) = extract_log_metadata().await;
+    let (region, version) = {
+        let cached = {
+            let guard = LOG_META_CACHE.lock().await;
+            guard.as_ref().and_then(|entry| {
+                if entry.cache_key == cache_key
+                    && (entry.region != "na" || entry.version != "unknown")
+                {
+                    Some((entry.region.clone(), entry.version.clone()))
+                } else {
+                    None
+                }
+            })
+        };
+
+        if let Some(pair) = cached {
+            pair
+        } else {
+            let (r, v) = extract_log_metadata().await;
+            let mut guard = LOG_META_CACHE.lock().await;
+            *guard = Some(LogMetaCache {
+                cache_key: cache_key.clone(),
+                region: r.clone(),
+                version: v.clone(),
+            });
+            (r, v)
+        }
+    };
     let rc = region_config(&region);
 
     let mut headers = HeaderMap::new();

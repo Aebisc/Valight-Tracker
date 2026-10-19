@@ -253,7 +253,6 @@ mod tests {
             rank_name: "".to_string(),
             peak_rank: 0,
             peak_rank_name: "".to_string(),
-            previous_rank: 0,
             rr: 0,
             earned_rr: 0,
             leaderboard_position: 0,

@@ -263,18 +263,6 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 2 }}>
               <span className="t-mono" style={{ whiteSpace: "nowrap" }}>{p.rr} RR</span>
-              {p.earnedRr !== 0 && p.recentGamesCount > 0 && (
-                <span
-                  className="t-mono"
-                  style={{
-                    fontSize: 10,
-                    color: p.earnedRr > 0 ? "var(--up)" : "var(--down)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {p.earnedRr > 0 ? `+${p.earnedRr}` : `${p.earnedRr}`}
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -354,22 +342,7 @@ function ExpandedRow({ p }: {
     }}>
       <div className="expanded-grid">
         <div className="expanded-section">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <div className="t-micro" style={{ color: "var(--ink-dim)" }}>Last Match</div>
-            {p.previousRank >= 3 && p.rank >= 3 && p.previousRank !== p.rank && (
-              <span
-                className="t-micro"
-                style={{
-                  color: p.rank > p.previousRank ? "var(--up)" : "var(--down)",
-                  fontWeight: 600,
-                  fontSize: 9,
-                  letterSpacing: "0.5px",
-                }}
-              >
-                {p.rank > p.previousRank ? "Promoted" : "Demoted"}
-              </span>
-            )}
-          </div>
+          <div className="t-micro" style={{ color: "var(--ink-dim)", marginBottom: 8 }}>Last Match</div>
           <div style={{ display: "flex", gap: 14, alignItems: "baseline" }}>
             <div>
               <span className="t-title" style={{ fontSize: 20, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
@@ -384,7 +357,7 @@ function ExpandedRow({ p }: {
               </div>
               <div className="t-micro" style={{ color: "var(--ink-dim)", marginTop: 3 }}>K/D</div>
             </div>
-            {p.earnedRr !== 0 && p.recentGamesCount > 0 && (
+            {p.isCurrentActRank && p.earnedRr !== 0 && p.recentGamesCount > 0 && (
               <>
                 <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0 }} />
                 <div>

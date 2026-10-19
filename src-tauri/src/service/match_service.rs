@@ -383,8 +383,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         map_id,
         game_mode,
         game_mode_id,
-        _is_ranked,
-        _server,
         season_id,
         ally_team_id,
     ) = match detected {
@@ -413,9 +411,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 .or_else(|| cg["ModeID"].as_str())
                 .unwrap_or("")
                 .to_string();
-            let is_ranked = cg["IsRanked"]
-                .as_bool()
-                .unwrap_or(game_mode_id == "competitive");
             (
                 mid.clone(),
                 "INGAME".to_string(),
@@ -423,8 +418,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 cg["MapID"].as_str().unwrap_or("").to_string(),
                 cg["Mode"].as_str().unwrap_or("").to_string(),
                 game_mode_id,
-                is_ranked,
-                cg["GamePodID"].as_str().unwrap_or("").to_string(),
                 cg["SeasonID"].as_str().unwrap_or("").to_string(),
                 None,
             )
@@ -483,8 +476,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     .or_else(|| pg["ModeID"].as_str())
                     .unwrap_or("")
                     .to_string(),
-                pg["IsRanked"].as_bool().unwrap_or(false),
-                String::new(),
                 pg["SeasonID"].as_str().unwrap_or("").to_string(),
                 ally_team_id,
             )
@@ -818,7 +809,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     .get(&(peak_rank as u64))
                     .cloned()
                     .unwrap_or_else(|| "Unranked".to_string()),
-                previous_rank,
                 rr,
                 earned_rr,
                 leaderboard_position,

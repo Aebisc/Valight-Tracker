@@ -21,7 +21,6 @@ pub struct PlayerStats {
     pub bodyshots: u32,
     pub legshots: u32,
     pub headshot_percent: f64,
-    pub winrate: f64,
     pub acs: u32,
     pub adr: f64,
     pub won: bool,
@@ -106,33 +105,26 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         .and_then(|p| p["teamId"].as_str().or_else(|| p["TeamID"].as_str()))
         .unwrap_or("");
 
-    let (winrate, won) = if !team_id.is_empty() {
+    let won = if !team_id.is_empty() {
         if let Some(teams) = match_detail["teams"].as_array() {
             let team = teams.iter().find(|t| t["teamId"].as_str() == Some(team_id));
             let opp = teams.iter().find(|t| t["teamId"].as_str() != Some(team_id));
             if let Some(team) = team {
-                let wins = team["roundsWon"].as_u64().unwrap_or(0) as f64;
-                let total = team["roundsPlayed"].as_u64().unwrap_or(0) as f64;
-                let wr = if total > 0.0 {
-                    round_pct(wins / total)
-                } else {
-                    0.0
-                };
-                let won = if let Some(t_won) = team["won"].as_bool() {
+                if let Some(t_won) = team["won"].as_bool() {
                     t_won
                 } else {
-                    let opp_wins = opp.and_then(|o| o["roundsWon"].as_u64()).unwrap_or(0) as f64;
+                    let opp_wins = opp.and_then(|o| o["roundsWon"].as_u64()).unwrap_or(0);
+                    let wins = team["roundsWon"].as_u64().unwrap_or(0);
                     wins > opp_wins
-                };
-                (wr, won)
+                }
             } else {
-                (0.0, false)
+                false
             }
         } else {
-            (0.0, false)
+            false
         }
     } else {
-        (0.0, false)
+        false
     };
 
     PlayerStats {
@@ -144,7 +136,6 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         bodyshots,
         legshots,
         headshot_percent,
-        winrate,
         acs,
         adr,
         won,
@@ -283,18 +274,6 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
         adr: round1(sum_adr / n),
         recent_games_count: player_stats.len() as u32,
     }
-}
-
-/// Port of aggregatePlayerStats(). Averages stats across N matches.
-pub fn aggregate_player_stats<T: std::borrow::Borrow<Value>>(
-    match_details: &[T],
-    puuid: &str,
-) -> AggregatedStats {
-    let extracted: Vec<PlayerStats> = match_details
-        .iter()
-        .map(|d| extract_player_stats(d.borrow(), puuid))
-        .collect();
-    aggregate_player_stats_from_extracted(&extracted)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
