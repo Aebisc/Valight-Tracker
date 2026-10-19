@@ -5,8 +5,6 @@ import PlayerTable from "../components/player-table";
 import StatusBar from "../components/status-bar";
 import { useMatchPolling } from "../hooks/use-match-polling";
 import { useSettings } from "../hooks/use-settings";
-import type { Player, MatchInfo } from "@/lib/types";
-import { rankColor, rankIconUrl } from "@/lib/constants";
 
 export default function Home() {
   const {
@@ -203,12 +201,6 @@ export default function Home() {
                 Refetch
               </button>
             </div>
-
-            {selfPuuid && (() => {
-              const self = players.find((p) => p.puuid === selfPuuid);
-              if (!self) return null;
-              return <SelfCard player={self} />;
-            })()}
           </div>
         ) : (
           <div className="a-enter" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
@@ -244,53 +236,6 @@ function Splash({ children }: { children: React.ReactNode }) {
       height: "70vh", gap: 0, textAlign: "center",
     }}>
       {children}
-    </div>
-  );
-}
-
-function SelfCard({ player }: { player?: Player }) {
-  if (!player) return null;
-  const rc = rankColor(player.rankName);
-  return (
-    <div className="card a-enter" style={{ padding: "18px 22px", display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-      {player.agentId && (
-        <img
-          src={`https://media.valorant-api.com/agents/${player.agentId}/displayicon.png`}
-          alt={player.agentName}
-          width={42} height={42}
-          style={{ borderRadius: 8, border: "1px solid var(--border)" }}
-        />
-      )}
-
-      <div style={{ minWidth: 0 }}>
-        <span className="t-title" style={{ fontSize: 16 }}>{player.name}</span>
-        <span className="t-label" style={{ marginLeft: 6, color: "var(--ink-faint)" }}>#{player.tag}</span>
-        <div className="t-micro" style={{ marginTop: 4, color: "var(--ink-dim)" }}>Level {player.accountLevel}</div>
-      </div>
-
-      <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0 }} />
-
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <img
-          src={rankIconUrl(player.rank)}
-          alt={player.rankName}
-          width={36} height={36}
-          style={{ filter: "drop-shadow(0 0 4px rgba(255,255,255,0.1))", objectFit: "contain" }}
-        />
-        <div>
-          <span className="t-title" style={{ color: rc, fontSize: 14 }}>{player.rankName}</span>
-          <div className="t-mono" style={{ marginTop: 2, fontSize: 11 }}>{player.rr} RR</div>
-        </div>
-      </div>
-
-      <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0 }} />
-
-      <div>
-        <div className="t-micro" style={{ color: "var(--ink-dim)", marginBottom: 4 }}>This Act</div>
-        <span className="t-mono" style={{ fontSize: 12 }}>
-          {player.currentSeasonWins}W / {player.currentSeasonGames}G
-        </span>
-      </div>
     </div>
   );
 }

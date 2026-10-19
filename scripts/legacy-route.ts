@@ -13,7 +13,7 @@ import {
   getPlayerPresences,
   type PlayerPresenceInfo,
 } from "@/lib/valorant-api";
-import { RANK_MAP, AGENT_MAP, MAP_MAP, GAMEMODE_MAP, DEATHMATCH_MODES, resolveStartingSide } from "@/lib/constants";
+import { RANK_MAP, AGENT_MAP, DEATHMATCH_MODES, resolveStartingSide } from "@/lib/constants";
 import type { ValorantPlayer, MatchInfo, ApiConfig, TeamSide } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -642,14 +642,6 @@ export async function GET(request: Request) {
       }
       return { ...player, ...lastMatch, recentResults };
     });
-    const mapLower = mapId.toLowerCase().replace(/\.[^/]+$/, "");
-    const mapName =
-      MAP_MAP[mapId] ??
-      MAP_MAP[mapLower] ??
-      MAP_MAP[mapId.toLowerCase()] ??
-      (mapId?.split("/").pop()?.replace(/\.[^.]+$/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())) ??
-      "Unknown";
-
     const queueLower = gameModeId.toLowerCase();
     const modeLower = gameMode.toLowerCase();
 
@@ -664,24 +656,6 @@ export async function GET(request: Request) {
     const m = stripAndExtract(modeLower);
     const modeKeyword = q.keyword || m.keyword;
 
-    const cleanFallback = modeKeyword
-      ? modeKeyword.charAt(0).toUpperCase() + modeKeyword.slice(1).toLowerCase()
-      : gameModeId && !gameModeId.includes("/")
-        ? gameModeId.charAt(0).toUpperCase() + gameModeId.slice(1).toLowerCase()
-        : "Unknown";
-
-    let gameModeName =
-      GAMEMODE_MAP[queueLower] ??
-      GAMEMODE_MAP[modeLower] ??
-      GAMEMODE_MAP[q.stripped] ??
-      GAMEMODE_MAP[m.stripped] ??
-      GAMEMODE_MAP[q.keyword] ??
-      GAMEMODE_MAP[m.keyword] ??
-      cleanFallback;
-
-    if (gameModeName === "Standard") {
-      gameModeName = isRanked ? "Competitive" : "Unrated";
-    }
     const isDeathmatch = DEATHMATCH_MODES.has(queueLower) || DEATHMATCH_MODES.has(modeKeyword);
 
     const startingSide: TeamSide = resolvedGameState === "PREGAME"
@@ -691,15 +665,8 @@ export async function GET(request: Request) {
     const matchInfo: MatchInfo = {
       matchId: resolvedMatchId,
       mapId,
-      mapName,
-      gameMode,
-      gameModeId,
-      gameModeName,
       isDeathmatch,
-      server,
-      isRanked,
       gameState: resolvedGameState,
-      seasonId,
       startingSide,
     };
 

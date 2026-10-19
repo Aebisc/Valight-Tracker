@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -549,18 +550,12 @@ async fn test_pregame_to_ingame_preserves_teammates_and_queries_only_enemies() {
         match_info: MatchInfo {
             match_id: "match-pre-999".to_string(),
             map_id: "/Game/Maps/Ascent/Ascent".to_string(),
-            map_name: "Ascent".to_string(),
-            game_mode: "Bomb".to_string(),
-            game_mode_id: "competitive".to_string(),
-            game_mode_name: "Competitive".to_string(),
             is_deathmatch: false,
-            server: "Frankfurt".to_string(),
-            is_ranked: true,
             game_state: "PREGAME".to_string(),
-            season_id: "season-123".to_string(),
             starting_side: None,
         },
         self_puuid: "aaaaaaaa-0014-0000-0000-000000000000".to_string(),
+        recent_match_ids: HashMap::new(),
     });
 
     let res = get_match(false, &state).await.expect("get_match should succeed");

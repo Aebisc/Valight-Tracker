@@ -16,6 +16,8 @@ const MATCH_DETAIL_CACHE_SIZE: usize = 500;
 
 use std::sync::atomic::AtomicU64;
 
+use std::collections::HashMap;
+
 /// Cached result of the last successful `get_match` call.
 #[derive(Debug, Clone)]
 pub struct MatchCache {
@@ -24,6 +26,7 @@ pub struct MatchCache {
     pub players: Vec<ValorantPlayer>,
     pub match_info: MatchInfo,
     pub self_puuid: String,
+    pub recent_match_ids: HashMap<String, Vec<String>>,
 }
 
 use crate::riot::config::RiotEndpoints;

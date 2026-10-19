@@ -105,7 +105,7 @@ export function useMatchPolling(): MatchPollingResult {
       }
 
       if (prevGameState.current === "PREGAME" && data.gameState === "INGAME" && data.match) {
-        toast(`Match started — Live on ${data.match.mapName}`, "info");
+        toast("Match started — Live", "info");
       }
 
       if (prevGameState.current === "INGAME" && data.gameState === "MENUS") {

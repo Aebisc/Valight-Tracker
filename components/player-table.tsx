@@ -254,11 +254,28 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
           <div style={{ textAlign: "right", minWidth: 60, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
               <span className="t-title" style={{ color: rc, fontSize: 13, opacity: p.rank >= 3 && !p.isCurrentActRank ? 0.55 : 1, transition: "color 0.2s ease, opacity 0.2s ease", whiteSpace: "nowrap" }}>{p.rankName}</span>
+              {p.leaderboardPosition > 0 && (
+                <span className="t-mono" style={{ fontSize: 10, color: rc, opacity: 0.85, whiteSpace: "nowrap" }}>#{p.leaderboardPosition}</span>
+              )}
               {p.rank >= 3 && !p.isCurrentActRank && (
                 <span className="t-micro" style={{ color: "var(--warn)", fontSize: 8, letterSpacing: "0.5px", flexShrink: 0 }}>PREV</span>
               )}
             </div>
-            <div className="t-mono" style={{ marginTop: 2, whiteSpace: "nowrap" }}>{p.rr} RR</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 2 }}>
+              <span className="t-mono" style={{ whiteSpace: "nowrap" }}>{p.rr} RR</span>
+              {p.earnedRr !== 0 && p.recentGamesCount > 0 && (
+                <span
+                  className="t-mono"
+                  style={{
+                    fontSize: 10,
+                    color: p.earnedRr > 0 ? "var(--up)" : "var(--down)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.earnedRr > 0 ? `+${p.earnedRr}` : `${p.earnedRr}`}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -337,7 +354,22 @@ function ExpandedRow({ p }: {
     }}>
       <div className="expanded-grid">
         <div className="expanded-section">
-          <div className="t-micro" style={{ color: "var(--ink-dim)", marginBottom: 8 }}>Last Match</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div className="t-micro" style={{ color: "var(--ink-dim)" }}>Last Match</div>
+            {p.previousRank >= 3 && p.rank >= 3 && p.previousRank !== p.rank && (
+              <span
+                className="t-micro"
+                style={{
+                  color: p.rank > p.previousRank ? "var(--up)" : "var(--down)",
+                  fontWeight: 600,
+                  fontSize: 9,
+                  letterSpacing: "0.5px",
+                }}
+              >
+                {p.rank > p.previousRank ? "Promoted" : "Demoted"}
+              </span>
+            )}
+          </div>
           <div style={{ display: "flex", gap: 14, alignItems: "baseline" }}>
             <div>
               <span className="t-title" style={{ fontSize: 20, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
@@ -352,6 +384,25 @@ function ExpandedRow({ p }: {
               </div>
               <div className="t-micro" style={{ color: "var(--ink-dim)", marginTop: 3 }}>K/D</div>
             </div>
+            {p.earnedRr !== 0 && p.recentGamesCount > 0 && (
+              <>
+                <div style={{ width: 1, height: 28, background: "var(--border)", flexShrink: 0 }} />
+                <div>
+                  <div
+                    className="t-title"
+                    style={{
+                      fontSize: 16,
+                      color: p.earnedRr > 0 ? "var(--up)" : "var(--down)",
+                      fontVariantNumeric: "tabular-nums",
+                      transition: "color 0.2s ease",
+                    }}
+                  >
+                    {p.earnedRr > 0 ? `+${p.earnedRr}` : `${p.earnedRr}`}
+                  </div>
+                  <div className="t-micro" style={{ color: "var(--ink-dim)", marginTop: 3 }}>RR</div>
+                </div>
+              </>
+            )}
           </div>
           {p.recentResults && p.recentResults.length > 0 && (
             <div style={{ display: "flex", gap: 5, marginTop: 10 }}>

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ValorantPlayer {
     pub puuid: String,
@@ -76,15 +76,8 @@ pub enum TeamSide {
 pub struct MatchInfo {
     pub match_id: String,
     pub map_id: String,
-    pub map_name: String,
-    pub game_mode: String,
-    pub game_mode_id: String,
-    pub game_mode_name: String,
     pub is_deathmatch: bool,
-    pub server: String,
-    pub is_ranked: bool,
     pub game_state: String,
-    pub season_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub starting_side: Option<TeamSide>,
 }

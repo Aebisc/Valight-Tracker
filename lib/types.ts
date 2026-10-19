@@ -48,15 +48,8 @@ export type TeamSide = "attack" | "defence" | null;
 export interface MatchInfo {
   matchId: string;
   mapId: string;
-  mapName: string;
-  gameMode: string;
-  gameModeId: string;
-  gameModeName: string;
   isDeathmatch: boolean;
-  server: string;
-  isRanked: boolean;
   gameState: GameState;
-  seasonId: string;
   startingSide?: TeamSide;
 }
 

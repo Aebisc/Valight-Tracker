@@ -36,6 +36,15 @@ fn main() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+            if let Some(dir) = valorant_tracker::service::disk_cache::default_cache_dir() {
+                tauri::async_runtime::spawn(async move {
+                    valorant_tracker::service::disk_cache::prune_cache(
+                        &dir,
+                        valorant_tracker::service::disk_cache::DEFAULT_MAX_DISK_ENTRIES,
+                    )
+                    .await;
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())

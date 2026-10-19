@@ -44,23 +44,13 @@ static AGENT_MAP: Lazy<HashMap<String, String>> = Lazy::new(|| {
     serde_json::from_str(raw).expect("agent_map.json is invalid")
 });
 
-static MAP_MAP: Lazy<HashMap<String, String>> = Lazy::new(|| {
-    let raw = include_str!("../../data/map_map.json");
-    serde_json::from_str(raw).expect("map_map.json is invalid")
-});
-
-static GAMEMODE_MAP: Lazy<HashMap<String, String>> = Lazy::new(|| {
-    let raw = include_str!("../../data/gamemode_map.json");
-    serde_json::from_str(raw).expect("gamemode_map.json is invalid")
-});
-
 static DEATHMATCH_MODES: Lazy<HashSet<String>> = Lazy::new(|| {
     let raw = include_str!("../../data/deathmatch_modes.json");
     let arr: Vec<String> = serde_json::from_str(raw).expect("deathmatch_modes.json is invalid");
     arr.into_iter().collect()
 });
 
-// ─── Map / mode resolution helpers ────────────────────────────────────────────
+// ─── Mode resolution helpers ──────────────────────────────────────────────────
 
 fn strip_extension(s: &str) -> &str {
     if let Some(pos) = s.rfind('.') {
@@ -82,81 +72,18 @@ pub fn strip_and_extract(path: &str) -> (String, String) {
     (stripped.to_string(), keyword)
 }
 
-pub fn resolve_map_name(map_id: &str) -> String {
-    let map_lower = map_id.to_lowercase();
-    let map_lower_stripped = strip_extension(&map_lower);
-    if let Some(name) = MAP_MAP
-        .get(map_id)
-        .or_else(|| MAP_MAP.get(map_lower_stripped))
-        .or_else(|| MAP_MAP.get(&map_lower))
-    {
-        return name.clone();
-    }
-    // Fallback: extract last path segment, strip extension, replace '_' with ' '
-    let last = map_id.split('/').next_back().unwrap_or("");
-    let no_ext = strip_extension(last).replace('_', " ");
-
-    static WORD_RE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"\b\w").unwrap());
-    let title_cased = WORD_RE.replace_all(&no_ext, |cap: &regex::Captures| cap[0].to_uppercase());
-
-    if title_cased.is_empty() {
-        "Unknown".to_string()
-    } else {
-        title_cased.into_owned()
-    }
-}
-
-pub fn resolve_game_mode_name(
-    queue_id: &str,
-    mode: &str,
-    is_ranked: bool,
-) -> (String, bool, String) {
+pub fn resolve_mode_flags(queue_id: &str, mode: &str) -> (bool, String) {
     let queue_lower = queue_id.to_lowercase();
     let mode_lower = mode.to_lowercase();
-    let (q_stripped, q_keyword) = strip_and_extract(&queue_lower);
-    let (m_stripped, m_keyword) = strip_and_extract(&mode_lower);
+    let (_, q_keyword) = strip_and_extract(&queue_lower);
+    let (_, m_keyword) = strip_and_extract(&mode_lower);
     let mode_keyword = if !q_keyword.is_empty() {
-        q_keyword.clone()
+        q_keyword
     } else {
-        m_keyword.clone()
+        m_keyword
     };
-
-    let clean_fallback = if !mode_keyword.is_empty() {
-        let mut c = mode_keyword.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().to_string() + c.as_str().to_lowercase().as_str(),
-        }
-    } else if !queue_id.is_empty() && !queue_id.contains('/') {
-        let mut c = queue_id.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().to_string() + c.as_str().to_lowercase().as_str(),
-        }
-    } else {
-        "Unknown".to_string()
-    };
-
-    let mut name = GAMEMODE_MAP
-        .get(&queue_lower)
-        .or_else(|| GAMEMODE_MAP.get(&mode_lower))
-        .or_else(|| GAMEMODE_MAP.get(&q_stripped))
-        .or_else(|| GAMEMODE_MAP.get(&m_stripped))
-        .or_else(|| GAMEMODE_MAP.get(&q_keyword))
-        .or_else(|| GAMEMODE_MAP.get(&m_keyword))
-        .cloned()
-        .unwrap_or(clean_fallback);
-
-    if name == "Standard" {
-        name = if is_ranked {
-            "Competitive".to_string()
-        } else {
-            "Unrated".to_string()
-        };
-    }
-
     let is_dm = DEATHMATCH_MODES.contains(&queue_lower) || DEATHMATCH_MODES.contains(&mode_keyword);
-    (name, is_dm, mode_keyword)
+    (is_dm, mode_keyword)
 }
 
 // ─── State detection ───────────────────────────────────────────────────────────
@@ -456,8 +383,8 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         map_id,
         game_mode,
         game_mode_id,
-        is_ranked,
-        server,
+        _is_ranked,
+        _server,
         season_id,
         ally_team_id,
     ) = match detected {
@@ -567,9 +494,13 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
     // Invalidate match cache if match changed, but preserve pregame teammates
     // if transitioning from PREGAME to INGAME for the same match/session.
-    let pregame_teammates: HashMap<String, ValorantPlayer> = {
+    let (pregame_teammates, pregame_recent_match_ids): (
+        HashMap<String, ValorantPlayer>,
+        HashMap<String, Vec<String>>,
+    ) = {
         let mut cache = state.match_cache.lock().await;
         let mut map = HashMap::new();
+        let mut ids_map = HashMap::new();
         if let Some(ref c) = *cache {
             if c.game_state == "PREGAME"
                 && resolved_game_state == "INGAME"
@@ -578,12 +509,13 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 for p in &c.players {
                     map.insert(p.puuid.clone(), p.clone());
                 }
+                ids_map = c.recent_match_ids.clone();
             }
             if c.match_id != resolved_match_id || c.game_state != resolved_game_state {
                 *cache = None;
             }
         }
-        map
+        (map, ids_map)
     };
 
     // PREGAME cache hit: just update agent selections
@@ -741,9 +673,14 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             }
             built.party_number = None;
 
+            let recent_ids = pregame_recent_match_ids
+                .get(puuid)
+                .cloned()
+                .unwrap_or_default();
+
             raw_built.push(RawPlayer {
                 built,
-                recent_match_ids: Vec::new(),
+                recent_match_ids: recent_ids,
             });
             continue;
         }
@@ -951,7 +888,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         if !disk_hits.is_empty() {
             let mut detail_cache = state.detail_cache.lock().await;
             for (mid, val) in disk_hits {
-                detail_cache.put(mid, Arc::new(val));
+                detail_cache.put(mid, Arc::new(disk_cache::slim_match_detail(&val)));
             }
         }
     }
@@ -971,27 +908,35 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         .collect()
         .await;
 
-    // Write newly fetched details into memory LRU and persistent disk cache
+    // Write newly fetched details into memory LRU and persistent disk cache (slimmed)
+    let slimmed_details: Vec<(String, Option<Value>)> = fetched_details
+        .into_iter()
+        .map(|(mid, detail)| {
+            let slimmed = detail.map(|d| disk_cache::slim_match_detail(&d));
+            (mid, slimmed)
+        })
+        .collect();
+
     {
         let mut detail_cache = state.detail_cache.lock().await;
-        for (mid, detail) in &fetched_details {
+        for (mid, detail) in &slimmed_details {
             if let Some(d) = detail {
                 detail_cache.put(mid.clone(), Arc::new(d.clone()));
             }
         }
     }
 
-    let has_new_details = fetched_details.iter().any(|(_, d)| d.is_some());
+    let has_new_details = slimmed_details.iter().any(|(_, d)| d.is_some());
     if has_new_details {
         if let Some(ref c_dir) = state.cache_dir {
             let c_dir = c_dir.clone();
             tokio::spawn(async move {
-                for (mid, detail) in fetched_details {
+                for (mid, detail) in slimmed_details {
                     if let Some(d) = detail {
                         disk_cache::write_match_detail(&c_dir, &mid, &d).await;
                     }
                 }
-                disk_cache::prune_cache(&c_dir, disk_cache::DEFAULT_MAX_DISK_ENTRIES).await;
+                disk_cache::maybe_prune_cache(&c_dir, disk_cache::DEFAULT_MAX_DISK_ENTRIES).await;
             });
         }
     }
@@ -1018,6 +963,11 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         (player_map, ordered)
     };
 
+    let recent_match_ids_map: HashMap<String, Vec<String>> = raw_built
+        .iter()
+        .map(|rp| (rp.built.puuid.clone(), rp.recent_match_ids.clone()))
+        .collect();
+
     // Now detail_cache lock is released! Do CPU stats computation:
     let mut built_players: Vec<ValorantPlayer> = Vec::with_capacity(raw_built.len());
     for rp in raw_built {
@@ -1026,7 +976,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             .unwrap_or_default();
         let mut player = rp.built;
 
-        if !details.is_empty() {
+        if !details.is_empty() && !pregame_teammates.contains_key(&player.puuid) {
             // Compute extract_player_stats once per match and reuse
             let mut player_stats_list = Vec::with_capacity(details.len());
             for d in &details {
@@ -1072,9 +1022,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     party::assign_party_numbers(&mut players_with_party, &presences);
 
     // 12. Resolve map / mode / side
-    let map_name = resolve_map_name(&map_id);
-    let (game_mode_name, is_deathmatch, mode_keyword) =
-        resolve_game_mode_name(&game_mode_id, &game_mode, is_ranked);
+    let (is_deathmatch, mode_keyword) = resolve_mode_flags(&game_mode_id, &game_mode);
 
     let starting_side = if resolved_game_state == "PREGAME" {
         side::resolve_starting_side(ally_team_id.as_deref(), &game_mode_id, &mode_keyword)
@@ -1085,15 +1033,8 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     let match_info = MatchInfo {
         match_id: resolved_match_id.clone(),
         map_id,
-        map_name,
-        game_mode,
-        game_mode_id,
-        game_mode_name,
         is_deathmatch,
-        server,
-        is_ranked,
         game_state: resolved_game_state.clone(),
-        season_id,
         starting_side,
     };
 
@@ -1104,6 +1045,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         players: players_with_party.clone(),
         match_info: match_info.clone(),
         self_puuid: cfg.puuid.clone(),
+        recent_match_ids: recent_match_ids_map,
     });
 
     Ok(ApiResponse {
@@ -1118,25 +1060,6 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_resolve_map_name() {
-        // Known maps from MAP_MAP
-        assert_eq!(resolve_map_name("/Game/Maps/Ascent/Ascent"), "Ascent");
-        assert_eq!(resolve_map_name("/Game/Maps/Duality/Duality"), "Bind");
-        assert_eq!(resolve_map_name("/Game/Maps/Bonsai/Bonsai"), "Split");
-
-        // Map with extension stripped
-        assert_eq!(resolve_map_name("/game/maps/ascent/ascent.umap"), "Ascent");
-
-        // Fallback title-cased with word boundary
-        assert_eq!(
-            resolve_map_name("/Game/Maps/Special/secret_underground_temple.umap"),
-            "Secret Underground Temple"
-        );
-        assert_eq!(resolve_map_name("unknown_map"), "Unknown Map");
-        assert_eq!(resolve_map_name(""), "Unknown");
-    }
 
     #[test]
     fn test_strip_and_extract() {
@@ -1155,33 +1078,32 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_game_mode_name() {
+    fn test_resolve_mode_flags() {
         // Standard competitive
-        let (name, is_dm, kw) = resolve_game_mode_name("competitive", "", true);
-        assert_eq!(name, "Competitive");
+        let (is_dm, kw) = resolve_mode_flags("competitive", "");
         assert!(!is_dm);
         assert_eq!(kw, "");
 
         // Standard unrated
-        let (name, is_dm, _) = resolve_game_mode_name("unrated", "", false);
-        assert_eq!(name, "Unrated");
+        let (is_dm, kw) = resolve_mode_flags("unrated", "");
         assert!(!is_dm);
+        assert_eq!(kw, "");
 
-        // Deathmatch
-        let (name, is_dm, _) = resolve_game_mode_name("deathmatch", "", false);
-        assert_eq!(name, "Deathmatch");
+        // Deathmatch via queue_id
+        let (is_dm, _) = resolve_mode_flags("deathmatch", "");
         assert!(is_dm);
 
-        // Standard mode resolved by is_ranked
-        let (name_ranked, _, _) =
-            resolve_game_mode_name("", "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C", true);
-        assert_eq!(name_ranked, "Competitive");
-
-        let (name_unranked, _, _) = resolve_game_mode_name(
+        // Deathmatch via mode keyword
+        let (is_dm, kw) = resolve_mode_flags(
             "",
-            "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C",
-            false,
+            "/Game/GameModes/Deathmatch/DeathmatchGameMode.DeathmatchGameMode_C",
         );
-        assert_eq!(name_unranked, "Unrated");
+        assert!(is_dm);
+        assert_eq!(kw, "deathmatch");
+
+        // Bomb mode keyword extraction
+        let (is_dm, kw) = resolve_mode_flags("", "/Game/GameModes/Bomb/BombGameMode.BombGameMode_C");
+        assert!(!is_dm);
+        assert_eq!(kw, "bomb");
     }
 }
