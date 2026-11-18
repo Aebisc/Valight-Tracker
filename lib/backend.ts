@@ -31,7 +31,7 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 /**
- * Fetches match data via Tauri IPC command `get_match` or falls back to HTTP API in browser dev.
+ * Fetches match data via the Tauri IPC command `get_match`.
  */
 export async function fetchMatchData(force = false): Promise<ApiResponse> {
   if (isTauri()) {

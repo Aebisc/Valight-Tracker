@@ -9,7 +9,6 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use super::client::build_local_client;
 use super::lockfile::Lockfile;
 
 // ─── Region config ────────────────────────────────────────────────────────────
@@ -238,11 +237,6 @@ fn client_platform_header() -> String {
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
-/// Port of getApiConfig(). Cached by (port, password) pair.
-pub async fn get_api_config(lockfile: &Lockfile, force: bool) -> Result<ApiConfig, ConfigError> {
-    let local_client = build_local_client();
-    get_api_config_with_client_and_endpoints(&local_client, lockfile, force, None).await
-}
 
 pub async fn get_api_config_with_client_and_endpoints(
     local_client: &reqwest::Client,

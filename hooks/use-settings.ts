@@ -6,11 +6,11 @@ export function useTheme() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
-    const saved = localStorage.getItem("theme") as "dark" | "light" | null;
-    if (saved) {
-      setTheme(saved);
-      document.documentElement.classList.toggle("light", saved === "light");
-    }
+    const saved = localStorage.getItem("theme");
+    const isLight = saved === "light" || document.documentElement.classList.contains("light");
+    const activeTheme: "dark" | "light" = isLight ? "light" : "dark";
+    setTheme(activeTheme);
+    document.documentElement.classList.toggle("light", isLight);
   }, []);
 
   const toggle = useCallback(() => {

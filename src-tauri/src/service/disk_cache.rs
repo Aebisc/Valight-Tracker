@@ -375,7 +375,6 @@ mod tests {
         assert_eq!(stats_raw.headshot_percent, stats_slim.headshot_percent);
         assert_eq!(stats_raw.acs, stats_slim.acs);
         assert_eq!(stats_raw.adr, stats_slim.adr);
-        assert_eq!(stats_raw.won, stats_slim.won);
 
         let res_raw = crate::service::stats::get_match_result(&raw, puuid);
         let res_slim = crate::service::stats::get_match_result(&slim, puuid);

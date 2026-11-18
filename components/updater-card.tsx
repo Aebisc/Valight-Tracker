@@ -29,6 +29,9 @@ export default function UpdaterCard() {
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const updateResourceRef = useRef<Update | null>(null);
+  const statusRef = useRef<UpdateStatus>("idle");
+  statusRef.current = status;
+  const dismissedVersionRef = useRef<string | null>(null);
 
   const checkForUpdate = useCallback(async () => {
     // In browser/dev outside Tauri,updater plugin won't be available
@@ -36,9 +39,16 @@ export default function UpdaterCard() {
       return;
     }
 
+    if (statusRef.current === "downloading" || statusRef.current === "installing") {
+      return;
+    }
+
     try {
       const updateResult = await check();
       if (updateResult) {
+        if (updateResult.version !== dismissedVersionRef.current) {
+          setDismissed(false);
+        }
         updateResourceRef.current = updateResult;
         setUpdate({
           currentVersion: updateResult.currentVersion,
@@ -227,7 +237,10 @@ export default function UpdaterCard() {
 
           {status === "available" && (
             <button
-              onClick={() => setDismissed(true)}
+              onClick={() => {
+                if (update) dismissedVersionRef.current = update.version;
+                setDismissed(true);
+              }}
               aria-label="Dismiss update notification"
               style={{
                 background: "transparent",
@@ -380,7 +393,10 @@ export default function UpdaterCard() {
         {status === "available" && (
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button
-              onClick={() => setDismissed(true)}
+              onClick={() => {
+                if (update) dismissedVersionRef.current = update.version;
+                setDismissed(true);
+              }}
               style={{
                 padding: "8px 14px",
                 borderRadius: 8,
@@ -447,7 +463,10 @@ export default function UpdaterCard() {
         {status === "error" && (
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button
-              onClick={() => setDismissed(true)}
+              onClick={() => {
+                if (update) dismissedVersionRef.current = update.version;
+                setDismissed(true);
+              }}
               style={{
                 padding: "8px 14px",
                 borderRadius: 8,

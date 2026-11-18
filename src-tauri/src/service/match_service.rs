@@ -4,7 +4,6 @@
 // This is the orchestrator — Phase 3 of the migration plan.
 // It calls all the riot/* and service/* functions in the right order.
 //
-// Status: PHASE 3 STUB — structure is correct, implementation TBD.
 // The full implementation follows the plan's Phase 3 ordering:
 //   1. Offline (no lockfile)
 //   2. Menus (no match)

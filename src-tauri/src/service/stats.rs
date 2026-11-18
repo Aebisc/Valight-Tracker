@@ -11,7 +11,6 @@ use serde_json::Value;
 
 // ─── extractPlayerStats ───────────────────────────────────────────────────────
 
-#[allow(dead_code)]
 pub struct PlayerStats {
     pub kills: u32,
     pub deaths: u32,
@@ -23,7 +22,6 @@ pub struct PlayerStats {
     pub headshot_percent: f64,
     pub acs: u32,
     pub adr: f64,
-    pub won: bool,
 }
 
 /// Port of extractPlayerStats(). Uses safe accessors throughout.
@@ -100,33 +98,6 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         0.0
     };
 
-    // Win/loss from team data
-    let team_id = player_stats
-        .and_then(|p| p["teamId"].as_str().or_else(|| p["TeamID"].as_str()))
-        .unwrap_or("");
-
-    let won = if !team_id.is_empty() {
-        if let Some(teams) = match_detail["teams"].as_array() {
-            let team = teams.iter().find(|t| t["teamId"].as_str() == Some(team_id));
-            let opp = teams.iter().find(|t| t["teamId"].as_str() != Some(team_id));
-            if let Some(team) = team {
-                if let Some(t_won) = team["won"].as_bool() {
-                    t_won
-                } else {
-                    let opp_wins = opp.and_then(|o| o["roundsWon"].as_u64()).unwrap_or(0);
-                    let wins = team["roundsWon"].as_u64().unwrap_or(0);
-                    wins > opp_wins
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
     PlayerStats {
         kills,
         deaths,
@@ -138,7 +109,6 @@ pub fn extract_player_stats(match_detail: &Value, puuid: &str) -> PlayerStats {
         headshot_percent,
         acs,
         adr,
-        won,
     }
 }
 
@@ -186,7 +156,6 @@ pub fn get_match_result(match_detail: &Value, puuid: &str) -> MatchResult {
 
 // ─── aggregatePlayerStats ─────────────────────────────────────────────────────
 
-#[allow(dead_code)]
 pub struct AggregatedStats {
     pub kills: f64,
     pub deaths: f64,
@@ -196,7 +165,6 @@ pub struct AggregatedStats {
     pub bodyshots: u32,
     pub legshots: u32,
     pub headshot_percent: f64,
-    pub winrate: f64,
     pub acs: u32,
     pub adr: f64,
     pub recent_games_count: u32,
@@ -213,7 +181,6 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
         bodyshots: 0,
         legshots: 0,
         headshot_percent: 0.0,
-        winrate: 0.0,
         acs: 0,
         adr: 0.0,
         recent_games_count: 0,
@@ -231,7 +198,6 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
     let mut sum_legshots = 0u32;
     let mut sum_acs = 0u64;
     let mut sum_adr = 0.0f64;
-    let mut wins = 0u32;
 
     for s in player_stats {
         sum_kills += s.kills;
@@ -242,9 +208,6 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
         sum_legshots += s.legshots;
         sum_acs += s.acs as u64;
         sum_adr += s.adr;
-        if s.won {
-            wins += 1;
-        }
     }
 
     let n = player_stats.len() as f64;
@@ -269,7 +232,6 @@ pub fn aggregate_player_stats_from_extracted(player_stats: &[PlayerStats]) -> Ag
         bodyshots: sum_bodyshots,
         legshots: sum_legshots,
         headshot_percent,
-        winrate: round_pct(wins as f64 / n),
         acs: (sum_acs as f64 / n).round() as u32,
         adr: round1(sum_adr / n),
         recent_games_count: player_stats.len() as u32,

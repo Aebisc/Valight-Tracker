@@ -158,14 +158,4 @@ impl ApiResponse {
             self_puuid: Some(puuid),
         }
     }
-
-    pub fn error(msg: String) -> Self {
-        Self {
-            game_state: "ERROR".into(),
-            error: Some(msg),
-            r#match: None,
-            players: None,
-            self_puuid: None,
-        }
-    }
 }
