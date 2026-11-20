@@ -2,6 +2,7 @@
 
 import MatchHeader from "../components/match-header";
 import PlayerTable from "../components/player-table";
+import RecentGamesHistory from "../components/recent-games-history";
 import StatusBar from "../components/status-bar";
 import { useMatchPolling } from "../hooks/use-match-polling";
 import { useSettings } from "../hooks/use-settings";
@@ -11,6 +12,7 @@ export default function Home() {
     players,
     matchInfo,
     gameState,
+    recentMatches,
     loading,
     refreshing,
     error,
@@ -111,8 +113,8 @@ export default function Home() {
           </Splash>
 
         ) : gameState === "MENUS" ? (
-          <div className="a-enter" style={{ maxWidth: 760, margin: "0 auto", width: "100%", minHeight: "70vh", display: "flex", flexDirection: "column", justifyContent: "center", gap: 24 }}>
-            <div className="card a-enter" style={{ padding: "32px 36px", display: "flex", alignItems: "center", gap: 24 }}>
+          <div className="a-enter" style={{ width: "100%", display: "flex", flexDirection: "column", gap: 20 }}>
+            <div className="card a-enter" style={{ maxWidth: 760, margin: "0 auto", width: "100%", padding: "32px 36px", display: "flex", alignItems: "center", gap: 24 }}>
               <div style={{ position: "relative", width: 64, height: 64, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--up)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <circle cx="12" cy="12" r="10" />
@@ -201,6 +203,10 @@ export default function Home() {
                 Refetch
               </button>
             </div>
+
+            {recentMatches.length > 0 && (
+              <RecentGamesHistory matches={recentMatches} />
+            )}
           </div>
         ) : (
           <div className="a-enter" style={{ display: "flex", flexDirection: "column", gap: 0 }}>

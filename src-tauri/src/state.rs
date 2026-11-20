@@ -10,7 +10,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::model::{MatchInfo, ValorantPlayer};
+use crate::model::{MatchInfo, SavedMatch, ValorantPlayer};
 
 const MATCH_DETAIL_CACHE_SIZE: usize = 500;
 
@@ -51,6 +51,8 @@ pub struct AppState {
     pub endpoints_override: Option<RiotEndpoints>,
     /// Directory for persistent match details on disk
     pub cache_dir: Option<PathBuf>,
+    /// Last 5 completed match snapshots (full lobby), newest first.
+    pub match_history: Mutex<Vec<SavedMatch>>,
 }
 
 impl AppState {
@@ -89,6 +91,7 @@ impl AppState {
             build_finished: AtomicU64::new(0),
             endpoints_override,
             cache_dir,
+            match_history: Mutex::new(Vec::new()),
         }
     }
 }

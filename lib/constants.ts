@@ -50,3 +50,90 @@ export const RANK_NAMES_SHORT: Record<number, string> = {
   26: "IM3",
   27: "RD",
 };
+
+export const MAP_NAMES: Record<string, string> = {
+  "/Game/Maps/Ascent/Ascent": "Ascent",
+  "/Game/Maps/Bonsai/Bonsai": "Split",
+  "/Game/Maps/Canyon/Canyon": "Fracture",
+  "/Game/Maps/Duality/Duality": "Bind",
+  "/Game/Maps/Foxtrot/Foxtrot": "Breeze",
+  "/Game/Maps/HURM/HURM_Alley/HURM_Alley": "District",
+  "/Game/Maps/HURM/HURM_Bowl/HURM_Bowl": "Kasbah",
+  "/Game/Maps/HURM/HURM_Helix/HURM_Helix": "Drift",
+  "/Game/Maps/HURM/HURM_HighTide/HURM_HighTide": "Glitch",
+  "/Game/Maps/HURM/HURM_Yard/HURM_Yard": "Piazza",
+  "/Game/Maps/Infinity/Infinity": "Abyss",
+  "/Game/Maps/Jam/Jam": "Lotus",
+  "/Game/Maps/Juliett/Juliett": "Sunset",
+  "/Game/Maps/Pitt/Pitt": "Pearl",
+  "/Game/Maps/Plummet/Plummet": "Summit",
+  "/Game/Maps/Port/Port": "Icebox",
+  "/Game/Maps/Rook/Rook": "Corrode",
+  "/Game/Maps/Triad/Triad": "Haven",
+  "/Game/Maps/Poveglia/Range": "The Range",
+  "/Game/Maps/PovegliaV2/RangeV2": "The Range",
+  "/Game/Maps/NPEV2/NPEV2": "Basic Training",
+  "/Game/Maps/AbilityDraft/AbilityDraft": "Gauntlet",
+};
+
+const MAP_CODENAMES: Record<string, string> = {
+  ascent: "Ascent",
+  bonsai: "Split",
+  split: "Split",
+  canyon: "Fracture",
+  fracture: "Fracture",
+  duality: "Bind",
+  bind: "Bind",
+  foxtrot: "Breeze",
+  breeze: "Breeze",
+  infinity: "Abyss",
+  abyss: "Abyss",
+  jam: "Lotus",
+  lotus: "Lotus",
+  juliett: "Sunset",
+  jules: "Sunset",
+  sunset: "Sunset",
+  pitt: "Pearl",
+  pearl: "Pearl",
+  port: "Icebox",
+  icebox: "Icebox",
+  triad: "Haven",
+  haven: "Haven",
+  corrode: "Corrode",
+  rook: "Corrode",
+  summit: "Summit",
+  plummet: "Summit",
+  hurm_alley: "District",
+  district: "District",
+  hurm_bowl: "Kasbah",
+  kasbah: "Kasbah",
+  hurm_helix: "Drift",
+  drift: "Drift",
+  hurm_hightide: "Glitch",
+  glitch: "Glitch",
+  hurm_yard: "Piazza",
+  piazza: "Piazza",
+  poveglia: "The Range",
+  range: "The Range",
+};
+
+export function getMapName(mapId: string): string {
+  if (!mapId) return "Unknown Map";
+  if (MAP_NAMES[mapId]) return MAP_NAMES[mapId];
+
+  const lower = mapId.toLowerCase().trim();
+  for (const [path, name] of Object.entries(MAP_NAMES)) {
+    if (path.toLowerCase() === lower) return name;
+  }
+
+  const segs = mapId.split("/").filter(Boolean);
+  const lastSeg = segs[segs.length - 1]?.toLowerCase() || "";
+  if (MAP_CODENAMES[lastSeg]) return MAP_CODENAMES[lastSeg];
+
+  if (segs.length > 0) {
+    const raw = segs[segs.length - 1];
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+
+  return "Unknown Map";
+}

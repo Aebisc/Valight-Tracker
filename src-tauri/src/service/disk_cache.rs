@@ -4,6 +4,7 @@
 // Completed match records are immutable, so storing them on disk
 // eliminates redundant remote API queries across app restarts.
 
+use crate::model::SavedMatch;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -111,6 +112,11 @@ pub async fn prune_cache(cache_dir: &Path, max_entries: usize) {
     while let Ok(Some(entry)) = entries.next_entry().await {
         if let Ok(meta) = entry.metadata().await {
             if meta.is_file() {
+                if let Some(file_name) = entry.path().file_name().and_then(|f| f.to_str()) {
+                    if file_name == "match_history.json" {
+                        continue;
+                    }
+                }
                 if let Some(ext) = entry.path().extension() {
                     if ext == "json" {
                         let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
@@ -134,6 +140,24 @@ pub async fn prune_cache(cache_dir: &Path, max_entries: usize) {
 /// Extracts a compact subset of match details preserving only the fields needed by stats and party calculations.
 /// Strips out coordinate arrays, xpModifications, behaviorFactors, roundDamage, etc.
 pub fn slim_match_detail(raw: &Value) -> Value {
+    let match_info = {
+        let mi = &raw["matchInfo"];
+        let mut map = serde_json::Map::new();
+        if let Some(v) = mi.get("mapId").or_else(|| mi.get("MapID")) {
+            map.insert("mapId".to_string(), v.clone());
+        }
+        if let Some(v) = mi.get("gameStartMillis").or_else(|| mi.get("GameStartMillis")) {
+            map.insert("gameStartMillis".to_string(), v.clone());
+        }
+        if let Some(v) = mi.get("matchId").or_else(|| mi.get("MatchID")) {
+            map.insert("matchId".to_string(), v.clone());
+        }
+        if let Some(v) = mi.get("queueID").or_else(|| mi.get("QueueID")) {
+            map.insert("queueID".to_string(), v.clone());
+        }
+        Value::Object(map)
+    };
+
     let players = raw["players"].as_array().map(|arr| {
         let slim_players: Vec<Value> = arr
             .iter()
@@ -147,6 +171,12 @@ pub fn slim_match_detail(raw: &Value) -> Value {
                 }
                 if let Some(party_id) = p.get("partyId").or_else(|| p.get("PartyID")) {
                     map.insert("partyId".to_string(), party_id.clone());
+                }
+                if let Some(v) = p.get("characterId").or_else(|| p.get("CharacterID")) {
+                    map.insert("characterId".to_string(), v.clone());
+                }
+                if let Some(v) = p.get("competitiveTier").or_else(|| p.get("CompetitiveTier")) {
+                    map.insert("competitiveTier".to_string(), v.clone());
                 }
                 if let Some(s) = p.get("stats").and_then(|s| s.as_object()) {
                     let mut stats_map = serde_json::Map::new();
@@ -243,10 +273,61 @@ pub fn slim_match_detail(raw: &Value) -> Value {
     }).unwrap_or_else(|| Value::Array(Vec::new()));
 
     serde_json::json!({
+        "matchInfo": match_info,
         "players": players,
         "teams": teams,
         "roundResults": round_results,
     })
+}
+
+/// Reads the last saved match history list from disk.
+pub async fn read_match_history(cache_dir: &Path) -> Vec<SavedMatch> {
+    let file_path = cache_dir.join("match_history.json");
+    let bytes = match fs::read(&file_path).await {
+        Ok(b) => b,
+        Err(_) => return Vec::new(),
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
+}
+
+/// Atomically persists the match history list to disk.
+pub async fn write_match_history(cache_dir: &Path, entries: &[SavedMatch]) {
+    if let Err(e) = fs::create_dir_all(cache_dir).await {
+        tracing::warn!("Failed to create match cache dir {:?}: {}", cache_dir, e);
+        return;
+    }
+
+    static HISTORY_TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nonce = HISTORY_TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let target_path = cache_dir.join("match_history.json");
+    let temp_path = cache_dir.join(format!(
+        "match_history.tmp.{}.{}",
+        std::process::id(),
+        nonce
+    ));
+
+    let bytes = match serde_json::to_vec(entries) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("Failed to serialize match history: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = fs::write(&temp_path, &bytes).await {
+        tracing::warn!("Failed to write temp match history file {:?}: {}", temp_path, e);
+        let _ = fs::remove_file(&temp_path).await;
+        return;
+    }
+
+    if let Err(e) = fs::rename(&temp_path, &target_path).await {
+        let _ = fs::remove_file(&temp_path).await;
+        if let Err(e2) = fs::write(&target_path, &bytes).await {
+            tracing::warn!("Failed fallback write for match history: {}", e2);
+            return;
+        }
+        tracing::debug!("Direct write fallback for match history: {}", e);
+    }
 }
 
 #[cfg(test)]
@@ -390,5 +471,47 @@ mod tests {
         crate::service::party::enrich_party_from_match_history(&mut players_slim, &[&slim]);
         assert_eq!(players_raw[0].party_id, players_slim[0].party_id);
         assert_eq!(players_raw[0].party_size, players_slim[0].party_size);
+
+        assert_eq!(slim["matchInfo"]["mapId"], raw["matchInfo"]["mapId"]);
+        assert_eq!(slim["players"][0]["characterId"], raw["players"][0]["characterId"]);
+        assert_eq!(slim["players"][0]["competitiveTier"], raw["players"][0]["competitiveTier"]);
+    }
+
+    #[tokio::test]
+    async fn test_match_history_roundtrip() {
+        let _guard = TEST_MUTEX.lock().await;
+        let temp_dir = std::env::temp_dir().join("valight_test_history_roundtrip");
+        let _ = fs::remove_dir_all(&temp_dir).await;
+
+        let sample = vec![SavedMatch {
+            match_id: "match-123".to_string(),
+            match_info: crate::model::MatchInfo {
+                match_id: "match-123".to_string(),
+                map_id: "/Game/Maps/Ascent/Ascent".to_string(),
+                is_deathmatch: false,
+                game_state: "INGAME".to_string(),
+                starting_side: None,
+            },
+            players: vec![crate::model::ValorantPlayer {
+                puuid: "puuid-1".to_string(),
+                name: "Player1".to_string(),
+                tag: "NA1".to_string(),
+                rank: 12,
+                rank_name: "Gold 3".to_string(),
+                ..Default::default()
+            }],
+            self_puuid: "puuid-1".to_string(),
+            saved_at: 1700000000000,
+            rounds_won: 13,
+            rounds_lost: 7,
+            result: Some(crate::model::MatchResult::W),
+        }];
+
+        assert!(read_match_history(&temp_dir).await.is_empty());
+        write_match_history(&temp_dir, &sample).await;
+        let read = read_match_history(&temp_dir).await;
+        assert_eq!(read, sample);
+
+        let _ = fs::remove_dir_all(&temp_dir).await;
     }
 }

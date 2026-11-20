@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useToast } from "../components/toast";
 import { fetchMatchData } from "@/lib/backend";
 import { sharePlayers, shareMatch } from "@/lib/share-structure";
-import type { Player, MatchInfo, ApiResponse, GameState } from "@/lib/types";
+import type { Player, MatchInfo, ApiResponse, GameState, SavedMatch } from "@/lib/types";
 
 const POLL_INTERVALS: Record<GameState, number> = {
   MENUS: 15000,
@@ -23,6 +23,7 @@ export interface MatchPollingResult {
   players: Player[];
   matchInfo: MatchInfo | null;
   gameState: GameState;
+  recentMatches: SavedMatch[];
   loading: boolean;
   refreshing: boolean;
   error: string;
@@ -39,6 +40,7 @@ export function useMatchPolling(): MatchPollingResult {
   const [players, setPlayers] = useState<Player[]>([]);
   const [matchInfo, setMatchInfo] = useState<MatchInfo | null>(null);
   const [gameState, setGameState] = useState<GameState>("OFFLINE");
+  const [recentMatches, setRecentMatches] = useState<SavedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +81,9 @@ export function useMatchPolling(): MatchPollingResult {
       // BUG-02: Structural sharing prevents re-renders when data has not changed
       setMatchInfo((prev) => shareMatch(prev, data.match ?? null));
       setPlayers((prev) => sharePlayers(prev, data.players ?? []));
+      if (data.recentMatches) {
+        setRecentMatches(data.recentMatches);
+      }
       setSelfPuuid(data.selfPuuid ?? "");
       setConnected(true);
       setLastUpdated(new Date());
@@ -221,6 +226,7 @@ export function useMatchPolling(): MatchPollingResult {
     players,
     matchInfo,
     gameState,
+    recentMatches,
     loading,
     refreshing,
     error,

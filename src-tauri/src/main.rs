@@ -37,12 +37,20 @@ fn main() {
                 let _ = window.set_focus();
             }
             if let Some(dir) = valorant_tracker::service::disk_cache::default_cache_dir() {
+                let dir_clone = dir.clone();
+                let state_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     valorant_tracker::service::disk_cache::prune_cache(
                         &dir,
                         valorant_tracker::service::disk_cache::DEFAULT_MAX_DISK_ENTRIES,
                     )
                     .await;
+
+                    let history = valorant_tracker::service::disk_cache::read_match_history(&dir_clone).await;
+                    if !history.is_empty() {
+                        let st = state_handle.state::<state::AppState>();
+                        *st.match_history.lock().await = history;
+                    }
                 });
             }
             Ok(())

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { MatchInfo, GameState } from "@/lib/types";
+import { getMapName } from "@/lib/constants";
 
 function useElapsedTimer(startTime?: number): string | null {
   const [elapsed, setElapsed] = useState<number>(() =>
@@ -177,6 +178,12 @@ export default function MatchHeader({
           </span>
           {showTimer && <TimerDisplay startTime={stateStartTime} />}
         </span>
+
+        {matchInfo?.mapId && (
+          <span className="tag" style={{ fontWeight: 600, color: "var(--ink)" }}>
+            {getMapName(matchInfo.mapId)}
+          </span>
+        )}
 
         {gameState === "PREGAME" && matchInfo?.startingSide && (
           <span

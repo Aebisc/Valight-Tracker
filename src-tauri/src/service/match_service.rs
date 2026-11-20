@@ -21,7 +21,7 @@ use std::sync::Arc;
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 
-use crate::model::{ApiError, ApiResponse, MatchInfo, ValorantPlayer};
+use crate::model::{ApiError, ApiResponse, MatchInfo, SavedMatch, ValorantPlayer};
 use crate::riot::{client::RiotResult, config, endpoints, lockfile};
 use crate::service::{disk_cache, party, player, side, stats};
 use crate::state::{AppState, MatchCache};
@@ -83,6 +83,197 @@ pub fn resolve_mode_flags(queue_id: &str, mode: &str) -> (bool, String) {
     };
     let is_dm = DEATHMATCH_MODES.contains(&queue_lower) || DEATHMATCH_MODES.contains(&mode_keyword);
     (is_dm, mode_keyword)
+}
+
+async fn save_match_lobby_to_history(state: &AppState, entry: SavedMatch) {
+    let mut history = state.match_history.lock().await;
+    if let Some(pos) = history.iter().position(|m| m.match_id == entry.match_id) {
+        history[pos] = entry;
+    } else {
+        history.insert(0, entry);
+    }
+    history.truncate(5);
+    if let Some(ref dir) = state.cache_dir {
+        disk_cache::write_match_history(dir, &history).await;
+    }
+}
+
+pub fn build_saved_match_from_detail(detail: &Value, self_puuid: &str, match_id: &str) -> Option<SavedMatch> {
+    let raw_players = detail["players"].as_array()?;
+    let mut players = Vec::new();
+
+    let mut self_team_id = String::new();
+    for p in raw_players {
+        let puuid = p
+            .get("subject")
+            .or_else(|| p.get("Subject"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if puuid.is_empty() {
+            continue;
+        }
+
+        let name = p
+            .get("gameName")
+            .or_else(|| p.get("GameName"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let tag = p
+            .get("tagLine")
+            .or_else(|| p.get("TagLine"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let team_id = p
+            .get("teamId")
+            .or_else(|| p.get("TeamID"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if puuid == self_puuid {
+            self_team_id = team_id.clone();
+        }
+
+        let agent_id = p
+            .get("characterId")
+            .or_else(|| p.get("CharacterID"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let agent_name = if !agent_id.is_empty() {
+            AGENT_MAP
+                .get(&agent_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string())
+        } else {
+            "Unknown".to_string()
+        };
+
+        let rank = p
+            .get("competitiveTier")
+            .or_else(|| p.get("CompetitiveTier"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let rank_name = RANK_MAP
+            .get(&(rank as u64))
+            .cloned()
+            .unwrap_or_else(|| "Unrated".to_string());
+
+        let p_stats = stats::extract_player_stats(detail, &puuid);
+        let party_id = p
+            .get("partyId")
+            .or_else(|| p.get("PartyID"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        players.push(ValorantPlayer {
+            puuid: puuid.clone(),
+            name,
+            tag,
+            agent_id,
+            agent_name,
+            team_id,
+            account_level: p.get("accountLevel").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            rank,
+            rank_name,
+            peak_rank: rank,
+            peak_rank_name: RANK_MAP
+                .get(&(rank as u64))
+                .cloned()
+                .unwrap_or_else(|| "Unrated".to_string()),
+            rr: 0,
+            earned_rr: 0,
+            leaderboard_position: 0,
+            headshots: p_stats.headshots,
+            bodyshots: p_stats.bodyshots,
+            legshots: p_stats.legshots,
+            headshot_percent: p_stats.headshot_percent,
+            winrate: 0.0,
+            kd: p_stats.kd,
+            kills: p_stats.kills as f64,
+            deaths: p_stats.deaths as f64,
+            assists: p_stats.assists as f64,
+            acs: p_stats.acs,
+            adr: p_stats.adr,
+            current_season_wins: 0,
+            current_season_games: 0,
+            is_current_act_rank: true,
+            recent_games_count: 1,
+            last_match_kills: p_stats.kills,
+            last_match_deaths: p_stats.deaths,
+            last_match_assists: p_stats.assists,
+            last_match_kd: p_stats.kd,
+            recent_results: vec![stats::get_match_result(detail, &puuid)],
+            party_id,
+            party_number: None,
+            party_size: None,
+        });
+    }
+
+    let teams = detail["teams"].as_array();
+    let team = teams.and_then(|arr| {
+        arr.iter().find(|t| {
+            t.get("teamId")
+                .or_else(|| t.get("TeamID"))
+                .and_then(|v| v.as_str())
+                == Some(&self_team_id)
+        })
+    });
+    let opp = teams.and_then(|arr| {
+        arr.iter().find(|t| {
+            t.get("teamId")
+                .or_else(|| t.get("TeamID"))
+                .and_then(|v| v.as_str())
+                != Some(&self_team_id)
+        })
+    });
+
+    let rounds_won = team
+        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let rounds_lost = opp
+        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+
+    let result = if !self_team_id.is_empty() {
+        Some(stats::get_match_result(detail, self_puuid))
+    } else {
+        None
+    };
+
+    let match_info_node = &detail["matchInfo"];
+    let map_id = match_info_node
+        .get("mapId")
+        .or_else(|| match_info_node.get("MapID"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let started_at = match_info_node
+        .get("gameStartMillis")
+        .or_else(|| match_info_node.get("GameStartMillis"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    Some(SavedMatch {
+        match_id: match_id.to_string(),
+        match_info: MatchInfo {
+            match_id: match_id.to_string(),
+            map_id,
+            is_deathmatch: false,
+            game_state: "INGAME".to_string(),
+            starting_side: None,
+        },
+        players,
+        self_puuid: self_puuid.to_string(),
+        saved_at: started_at,
+        rounds_won,
+        rounds_lost,
+        result,
+    })
 }
 
 // ─── State detection ───────────────────────────────────────────────────────────
@@ -258,6 +449,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     players: Some(cached.players.clone()),
                     self_puuid: Some(cached.self_puuid.clone()),
                     error: None,
+                    recent_matches: None,
                 });
             }
         }
@@ -276,6 +468,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     players: Some(cached.players.clone()),
                     self_puuid: Some(cached.self_puuid.clone()),
                     error: None,
+                    recent_matches: None,
                 });
             }
         }
@@ -363,6 +556,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     players: Some(cached.players.clone()),
                     self_puuid: Some(cfg.puuid.clone()),
                     error: None,
+                    recent_matches: None,
                 });
             }
         }
@@ -370,8 +564,135 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
     // MENUS
     if detected == DetectedState::Menus {
-        *state.match_cache.lock().await = None;
-        return Ok(ApiResponse::menus(cfg.puuid.clone()));
+        let old_cache = {
+            let mut cache = state.match_cache.lock().await;
+            cache.take()
+        };
+
+        if let Some(prev) = old_cache {
+            if prev.game_state == "INGAME" {
+                if let Some(detail) = endpoints::get_match_details(&state.remote_client, &cfg, &prev.match_id).await {
+                    let slim = disk_cache::slim_match_detail(&detail);
+                    if let Some(ref dir) = state.cache_dir {
+                        disk_cache::write_match_detail(dir, &prev.match_id, &slim).await;
+                    }
+
+                    let self_team_id = prev
+                        .players
+                        .iter()
+                        .find(|p| p.puuid == cfg.puuid)
+                        .map(|p| p.team_id.as_str())
+                        .unwrap_or("");
+                    let teams = slim["teams"].as_array();
+                    let team = teams.and_then(|arr| {
+                        arr.iter().find(|t| {
+                            t.get("teamId")
+                                .or_else(|| t.get("TeamID"))
+                                .and_then(|v| v.as_str())
+                                == Some(self_team_id)
+                        })
+                    });
+                    let opp = teams.and_then(|arr| {
+                        arr.iter().find(|t| {
+                            t.get("teamId")
+                                .or_else(|| t.get("TeamID"))
+                                .and_then(|v| v.as_str())
+                                != Some(self_team_id)
+                        })
+                    });
+
+                    let rounds_won = team
+                        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                    let rounds_lost = opp
+                        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                    let result = if !self_team_id.is_empty() {
+                        Some(stats::get_match_result(&slim, &cfg.puuid))
+                    } else {
+                        None
+                    };
+
+                    let mut history = state.match_history.lock().await;
+                    if let Some(entry) = history.iter_mut().find(|m| m.match_id == prev.match_id) {
+                        entry.rounds_won = rounds_won;
+                        entry.rounds_lost = rounds_lost;
+                        entry.result = result;
+                    }
+                    if let Some(ref dir) = state.cache_dir {
+                        disk_cache::write_match_history(dir, &history).await;
+                    }
+                }
+            }
+        }
+
+        if state.match_history.lock().await.is_empty() || force {
+            if let Some(comp_raw) = endpoints::get_competitive_updates(&state.remote_client, &cfg, &cfg.puuid, 5).await {
+                let match_ids: Vec<String> = comp_raw
+                    .get("Matches")
+                    .and_then(|m| m.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|m| {
+                                m.get("MatchID")
+                                    .and_then(|id| id.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                for mid in match_ids.iter().take(5) {
+                    if state.match_history.lock().await.iter().any(|m| m.match_id == *mid) {
+                        continue;
+                    }
+
+                    let cached_detail = if let Some(ref dir) = state.cache_dir {
+                        disk_cache::read_match_detail(dir, mid).await
+                    } else {
+                        None
+                    };
+
+                    let detail = match cached_detail {
+                        Some(d) => Some(d),
+                        None => {
+                            if let Some(remote_detail) =
+                                endpoints::get_match_details(&state.remote_client, &cfg, mid).await
+                            {
+                                let slim = disk_cache::slim_match_detail(&remote_detail);
+                                if let Some(ref dir) = state.cache_dir {
+                                    disk_cache::write_match_detail(dir, mid, &slim).await;
+                                }
+                                Some(slim)
+                            } else {
+                                None
+                            }
+                        }
+                    };
+
+                    if let Some(ref d) = detail {
+                        if let Some(saved) = build_saved_match_from_detail(d, &cfg.puuid, mid) {
+                            let mut h = state.match_history.lock().await;
+                            h.push(saved);
+                        }
+                    }
+                }
+
+                let mut h = state.match_history.lock().await;
+                h.truncate(5);
+                if let Some(ref dir) = state.cache_dir {
+                    disk_cache::write_match_history(dir, &h).await;
+                }
+            }
+        }
+
+        let history = state.match_history.lock().await.clone();
+        return Ok(ApiResponse::menus_with_history(
+            cfg.puuid.clone(),
+            if history.is_empty() { None } else { Some(history) },
+        ));
     }
 
     // 6. Fetch match data
@@ -391,7 +712,11 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 RiotResult::Ok(v) => v,
                 RiotResult::NotFound => {
                     *state.match_cache.lock().await = None;
-                    return Ok(ApiResponse::menus(cfg.puuid.clone()));
+                    let history = state.match_history.lock().await.clone();
+                    return Ok(ApiResponse::menus_with_history(
+                        cfg.puuid.clone(),
+                        if history.is_empty() { None } else { Some(history) },
+                    ));
                 }
                 RiotResult::Unauthorized => {
                     return Err(ApiError::auth("Unauthorized fetching coregame match"))
@@ -426,7 +751,11 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                 RiotResult::Ok(v) => v,
                 RiotResult::NotFound => {
                     *state.match_cache.lock().await = None;
-                    return Ok(ApiResponse::menus(cfg.puuid.clone()));
+                    let history = state.match_history.lock().await.clone();
+                    return Ok(ApiResponse::menus_with_history(
+                        cfg.puuid.clone(),
+                        if history.is_empty() { None } else { Some(history) },
+                    ));
                 }
                 RiotResult::Unauthorized => {
                     return Err(ApiError::auth("Unauthorized fetching pregame match"))
@@ -539,6 +868,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     players: Some(cached.players.clone()),
                     self_puuid: Some(cfg.puuid.clone()),
                     error: None,
+                    recent_matches: None,
                 });
             }
         }
@@ -1029,7 +1359,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
     // 13. Store in match cache
     *state.match_cache.lock().await = Some(MatchCache {
-        match_id: resolved_match_id,
+        match_id: resolved_match_id.clone(),
         game_state: resolved_game_state.clone(),
         players: players_with_party.clone(),
         match_info: match_info.clone(),
@@ -1037,12 +1367,35 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         recent_match_ids: recent_match_ids_map,
     });
 
+    if resolved_game_state == "INGAME" {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        save_match_lobby_to_history(
+            state,
+            SavedMatch {
+                match_id: resolved_match_id,
+                match_info: match_info.clone(),
+                players: players_with_party.clone(),
+                self_puuid: cfg.puuid.clone(),
+                saved_at: now_ms,
+                rounds_won: 0,
+                rounds_lost: 0,
+                result: None,
+            },
+        )
+        .await;
+    }
+
     Ok(ApiResponse {
         game_state: resolved_game_state,
         r#match: Some(match_info),
         players: Some(players_with_party),
         self_puuid: Some(cfg.puuid),
         error: None,
+        recent_matches: None,
     })
 }
 

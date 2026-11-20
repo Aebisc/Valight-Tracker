@@ -81,6 +81,22 @@ pub struct MatchInfo {
     pub starting_side: Option<TeamSide>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedMatch {
+    pub match_id: String,
+    pub match_info: MatchInfo,
+    pub players: Vec<ValorantPlayer>,
+    pub self_puuid: String,
+    pub saved_at: u64,
+    #[serde(default)]
+    pub rounds_won: u32,
+    #[serde(default)]
+    pub rounds_lost: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<MatchResult>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiResponse {
@@ -93,6 +109,8 @@ pub struct ApiResponse {
     pub players: Option<Vec<ValorantPlayer>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub self_puuid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_matches: Option<Vec<SavedMatch>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,16 +164,22 @@ impl ApiResponse {
             r#match: None,
             players: None,
             self_puuid: None,
+            recent_matches: None,
         }
     }
 
     pub fn menus(puuid: String) -> Self {
+        Self::menus_with_history(puuid, None)
+    }
+
+    pub fn menus_with_history(puuid: String, recent_matches: Option<Vec<SavedMatch>>) -> Self {
         Self {
             game_state: "MENUS".into(),
             error: None,
             r#match: None,
             players: Some(vec![]),
             self_puuid: Some(puuid),
+            recent_matches,
         }
     }
 }

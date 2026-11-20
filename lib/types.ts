@@ -52,6 +52,19 @@ export interface MatchInfo {
   startingSide?: TeamSide;
 }
 
+export type MatchResult = "W" | "L" | "D";
+
+export interface SavedMatch {
+  matchId: string;
+  matchInfo: MatchInfo;
+  players: Player[];
+  selfPuuid: string;
+  savedAt: number;
+  roundsWon?: number;
+  roundsLost?: number;
+  result?: MatchResult;
+}
+
 export type Player = ValorantPlayer;
 
 export interface ApiResponse {
@@ -60,4 +73,5 @@ export interface ApiResponse {
   match?: MatchInfo;
   players?: Player[];
   selfPuuid?: string;
+  recentMatches?: SavedMatch[];
 }
