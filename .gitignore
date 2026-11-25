@@ -1,15 +1,6 @@
 # Icons & Static Assets
-icons/
-**/icons/
 public/
 assets/
-*.ico
-*.icns
-*.png
-*.jpg
-*.jpeg
-*.svg
-*.webp
 
 # Package Lockfiles
 package-lock.json
