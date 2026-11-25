@@ -134,7 +134,7 @@ export default function UpdaterCard() {
       style={{
         position: "fixed",
         bottom: 24,
-        right: 24,
+        left: 24,
         zIndex: 100,
         width: 380,
         maxWidth: "calc(100vw - 48px)",

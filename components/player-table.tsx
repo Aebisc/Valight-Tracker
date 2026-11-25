@@ -168,7 +168,13 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
         tabIndex={0}
         aria-expanded={expanded}
         onClick={() => onToggle(p.puuid)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(p.puuid); } }}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle(p.puuid);
+          }
+        }}
         style={{
           cursor: "pointer",
           userSelect: "none",
@@ -204,7 +210,6 @@ function Row({ p, self, i, expanded, onToggle, badges }: RowProps) {
                 href={`https://tracker.gg/valorant/profile/riot/${encodeURIComponent(p.name)}%23${encodeURIComponent(p.tag)}/overview`}
                 target="_blank"
                 rel="noopener noreferrer"
-                tabIndex={-1}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -555,16 +560,10 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     setExpanded((prev) => (prev === puuid ? null : puuid));
   }, []);
 
-  if (isDeathmatch) {
-    return (
-      <MemoizedTeam
-        label="Players" color="var(--ink-faint)" players={players}
-        selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded}
-      />
-    );
-  }
-
   const { my, enemy, myColor, enemyColor } = useMemo(() => {
+    if (isDeathmatch) {
+      return { my: [], enemy: [], myColor: "var(--blue)", enemyColor: "var(--red)" };
+    }
     const blue = players.filter((p) => p.teamId === "Blue");
     const red = players.filter((p) => p.teamId === "Red");
     const selfTeam = players.find((p) => p.puuid === selfPuuid)?.teamId ?? "Blue";
@@ -573,11 +572,11 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     const myColor = selfTeam === "Blue" ? "var(--blue)" : "var(--red)";
     const enemyColor = selfTeam === "Blue" ? "var(--red)" : "var(--blue)";
     return { my, enemy, myColor, enemyColor };
-  }, [players, selfPuuid]);
+  }, [players, selfPuuid, isDeathmatch]);
 
   const playerBadges = useMemo(() => {
     const badges = new Map<string, BadgeType[]>();
-    if (players.length === 0) return badges;
+    if (isDeathmatch || players.length === 0) return badges;
 
     const sorted = [...players].filter(p => p.acs > 0).sort((a, b) => b.acs - a.acs);
     const mvp = sorted[0];
@@ -604,7 +603,16 @@ export default function PlayerTable({ players, isDeathmatch, selfPuuid = "" }: P
     }
 
     return badges;
-  }, [players]);
+  }, [players, isDeathmatch]);
+
+  if (isDeathmatch) {
+    return (
+      <MemoizedTeam
+        label="Players" color="var(--ink-faint)" players={players}
+        selfPuuid={selfPuuid} expandedPuuid={expandedPuuid} onToggle={toggleExpanded}
+      />
+    );
+  }
 
   if (my.length > 0 && enemy.length > 0) {
     return (

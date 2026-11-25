@@ -104,13 +104,16 @@ export function useMatchPolling(): MatchPollingResult {
       }
 
       const wasInMenus = prevGameState.current === "MENUS" || prevGameState.current === "OFFLINE";
-      const nowInMatch = data.gameState === "PREGAME" || data.gameState === "INGAME";
-      if (wasInMenus && nowInMatch && data.match) {
+      if (wasInMenus && data.gameState === "PREGAME" && data.match) {
         toast("Match found — Agent Select", "success");
       }
 
       if (prevGameState.current === "PREGAME" && data.gameState === "INGAME" && data.match) {
         toast("Match started — Live", "info");
+      }
+
+      if (wasInMenus && data.gameState === "INGAME" && data.match) {
+        toast("Match in progress — Live", "info");
       }
 
       if (prevGameState.current === "INGAME" && data.gameState === "MENUS") {
@@ -124,12 +127,28 @@ export function useMatchPolling(): MatchPollingResult {
 
       console.error("[fetchMatch] error:", e);
       failCountRef.current += 1;
-      if (failCountRef.current >= 3) {
-        setReconnecting(true);
-        setError("Reconnecting...");
+      const errMsg = e instanceof Error ? e.message : "Failed to connect";
+
+      const isStartupOrError = prevGameState.current === "OFFLINE" || prevGameState.current === "ERROR";
+      const isFatal = errMsg.includes("Tauri") || errMsg.includes("not running inside Tauri");
+
+      if (isStartupOrError) {
+        if (failCountRef.current >= 3 || isFatal) {
+          setGameState("ERROR");
+          setError(errMsg);
+          setReconnecting(false);
+        } else {
+          setError("Failed to connect");
+        }
       } else {
-        setError("Failed to connect");
+        if (failCountRef.current >= 3) {
+          setReconnecting(true);
+          setError("Reconnecting...");
+        } else {
+          setError("Failed to connect");
+        }
       }
+
       setConnected(false);
       if (failCountRef.current === 1) {
         toast("Connection lost — retrying...", "error");
@@ -168,6 +187,7 @@ export function useMatchPolling(): MatchPollingResult {
   }, [fetchMatch]);
 
   const refreshMatch = useCallback(() => {
+    failCountRef.current = 0;
     if (retryPendingRef.current) {
       clearTimeout(retryPendingRef.current);
       retryPendingRef.current = null;
@@ -177,6 +197,7 @@ export function useMatchPolling(): MatchPollingResult {
   }, [fetchMatch]);
 
   const hardRefreshMatch = useCallback(() => {
+    failCountRef.current = 0;
     if (retryPendingRef.current) {
       clearTimeout(retryPendingRef.current);
       retryPendingRef.current = null;

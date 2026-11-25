@@ -51,7 +51,7 @@ export default function StatusBar() {
           padding: 10px 32px;
         }
         .status-bar-content {
-          max-width: 1400px;
+          max-width: 1600px;
           margin: 0 auto;
           display: flex;
           align-items: center;

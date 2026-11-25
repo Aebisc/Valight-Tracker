@@ -155,6 +155,9 @@ pub fn slim_match_detail(raw: &Value) -> Value {
         if let Some(v) = mi.get("queueID").or_else(|| mi.get("QueueID")) {
             map.insert("queueID".to_string(), v.clone());
         }
+        if let Some(v) = mi.get("gameMode").or_else(|| mi.get("GameMode")) {
+            map.insert("gameMode".to_string(), v.clone());
+        }
         Value::Object(map)
     };
 
@@ -165,6 +168,15 @@ pub fn slim_match_detail(raw: &Value) -> Value {
                 let mut map = serde_json::Map::new();
                 if let Some(subject) = p.get("subject").or_else(|| p.get("Subject")) {
                     map.insert("subject".to_string(), subject.clone());
+                }
+                if let Some(v) = p.get("gameName").or_else(|| p.get("GameName")) {
+                    map.insert("gameName".to_string(), v.clone());
+                }
+                if let Some(v) = p.get("tagLine").or_else(|| p.get("TagLine")) {
+                    map.insert("tagLine".to_string(), v.clone());
+                }
+                if let Some(v) = p.get("accountLevel").or_else(|| p.get("AccountLevel")) {
+                    map.insert("accountLevel".to_string(), v.clone());
                 }
                 if let Some(team_id) = p.get("teamId").or_else(|| p.get("TeamID")) {
                     map.insert("teamId".to_string(), team_id.clone());
@@ -473,8 +485,12 @@ mod tests {
         assert_eq!(players_raw[0].party_size, players_slim[0].party_size);
 
         assert_eq!(slim["matchInfo"]["mapId"], raw["matchInfo"]["mapId"]);
+        assert_eq!(slim["matchInfo"]["gameMode"], raw["matchInfo"]["gameMode"]);
         assert_eq!(slim["players"][0]["characterId"], raw["players"][0]["characterId"]);
         assert_eq!(slim["players"][0]["competitiveTier"], raw["players"][0]["competitiveTier"]);
+        assert_eq!(slim["players"][0]["gameName"], raw["players"][0]["gameName"]);
+        assert_eq!(slim["players"][0]["tagLine"], raw["players"][0]["tagLine"]);
+        assert_eq!(slim["players"][0]["accountLevel"], raw["players"][0]["accountLevel"]);
     }
 
     #[tokio::test]

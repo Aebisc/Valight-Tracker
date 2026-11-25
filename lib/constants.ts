@@ -74,6 +74,11 @@ export const MAP_NAMES: Record<string, string> = {
   "/Game/Maps/PovegliaV2/RangeV2": "The Range",
   "/Game/Maps/NPEV2/NPEV2": "Basic Training",
   "/Game/Maps/AbilityDraft/AbilityDraft": "Gauntlet",
+  "/Game/Maps/Duel/Duel_1/Skirmish_A": "Skirmish A",
+  "/Game/Maps/Duel/Duel_2/Skirmish_B": "Skirmish B",
+  "/Game/Maps/Duel/Duel_3/Skirmish_C": "Skirmish C",
+  "/Game/Maps/Duel/Duel_Platform/Skirmish_D": "Skirmish D",
+  "/Game/Maps/Duel/Duel_Heady/Skirmish_E": "Skirmish E",
 };
 
 const MAP_CODENAMES: Record<string, string> = {
@@ -115,6 +120,20 @@ const MAP_CODENAMES: Record<string, string> = {
   piazza: "Piazza",
   poveglia: "The Range",
   range: "The Range",
+  rangev2: "The Range",
+  npev2: "Basic Training",
+  abilitydraft: "Gauntlet",
+  gauntlet: "Gauntlet",
+  skirmish_a: "Skirmish A",
+  skirmish_b: "Skirmish B",
+  skirmish_c: "Skirmish C",
+  skirmish_d: "Skirmish D",
+  skirmish_e: "Skirmish E",
+  duel_1: "Skirmish A",
+  duel_2: "Skirmish B",
+  duel_3: "Skirmish C",
+  duel_platform: "Skirmish D",
+  duel_heady: "Skirmish E",
 };
 
 export function getMapName(mapId: string): string {
@@ -132,7 +151,9 @@ export function getMapName(mapId: string): string {
 
   if (segs.length > 0) {
     const raw = segs[segs.length - 1];
-    return raw.charAt(0).toUpperCase() + raw.slice(1);
+    return raw
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   return "Unknown Map";

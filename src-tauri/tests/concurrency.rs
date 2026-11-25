@@ -322,7 +322,7 @@ async fn test_error_path_releases_lock_and_preserves_counter_integrity() {
     let res = get_match(false, &state).await;
     assert!(res.is_err(), "Expected error due to invalid lockfile");
 
-    // Counters must be synchronized even on error path!
+    // Under Task 9: failed builds do not bump build_finished, preventing waiters from returning stale Ok
     let started = state
         .build_started
         .load(std::sync::atomic::Ordering::SeqCst);
@@ -330,7 +330,7 @@ async fn test_error_path_releases_lock_and_preserves_counter_integrity() {
         .build_finished
         .load(std::sync::atomic::Ordering::SeqCst);
     assert_eq!(started, 1);
-    assert_eq!(finished, 1);
+    assert_eq!(finished, 0);
 
     // Lock must be released so next call can proceed immediately
     let lock_try = state.build_lock.try_lock();
@@ -543,11 +543,11 @@ async fn test_pregame_to_ingame_preserves_teammates_and_queries_only_enemies() {
     }
 
     *state.match_cache.lock().await = Some(MatchCache {
-        match_id: "match-pre-999".to_string(),
+        match_id: "match-core-100".to_string(),
         game_state: "PREGAME".to_string(),
         players: pregame_players,
         match_info: MatchInfo {
-            match_id: "match-pre-999".to_string(),
+            match_id: "match-core-100".to_string(),
             map_id: "/Game/Maps/Ascent/Ascent".to_string(),
             is_deathmatch: false,
             game_state: "PREGAME".to_string(),
@@ -555,6 +555,7 @@ async fn test_pregame_to_ingame_preserves_teammates_and_queries_only_enemies() {
         },
         self_puuid: "aaaaaaaa-0014-0000-0000-000000000000".to_string(),
         recent_match_ids: HashMap::new(),
+        incomplete_puuids: std::collections::HashSet::new(),
     });
 
     let res = get_match(false, &state).await.expect("get_match should succeed");
@@ -600,6 +601,88 @@ async fn test_pregame_to_ingame_preserves_teammates_and_queries_only_enemies() {
             en
         );
     }
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[tokio::test]
+async fn test_failed_build_does_not_bump_build_finished_or_return_stale_cache() {
+    let _guard = TEST_MUTEX.lock().await;
+    let temp_dir = setup_temp_env();
+    let server = MockServer::start().await;
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let scenario_dir = manifest_dir
+        .join("fixtures")
+        .join("redacted")
+        .join("pregame_comp");
+    let entitlements_json: Value = serde_json::from_str(
+        &std::fs::read_to_string(scenario_dir.join("entitlements.json")).unwrap(),
+    )
+    .unwrap();
+    Mock::given(method("GET"))
+        .and(url_path("/entitlements/v1/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(entitlements_json))
+        .mount(&server)
+        .await;
+
+    // State detection fails with 429 RateLimited
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/core-game/v1/players/.*"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/pregame/v1/players/.*"))
+        .respond_with(ResponseTemplate::new(429))
+        .mount(&server)
+        .await;
+
+    let endpoints = RiotEndpoints {
+        local_base: server.uri(),
+        pd: server.uri(),
+        glz: server.uri(),
+    };
+
+    let local_client = valorant_tracker::riot::client::build_local_client();
+    let remote_client = valorant_tracker::riot::client::build_remote_client();
+    let state = Arc::new(AppState::new_with_override(
+        local_client,
+        remote_client,
+        Some(endpoints),
+    ));
+
+    // Populate match_cache with a stale cache
+    *state.match_cache.lock().await = Some(MatchCache {
+        match_id: "stale-match-123".to_string(),
+        game_state: "INGAME".to_string(),
+        players: Vec::new(),
+        match_info: MatchInfo {
+            match_id: "stale-match-123".to_string(),
+            map_id: "/Game/Maps/Ascent/Ascent".to_string(),
+            is_deathmatch: false,
+            game_state: "INGAME".to_string(),
+            starting_side: None,
+        },
+        self_puuid: "self-puuid".to_string(),
+        recent_match_ids: HashMap::new(),
+        incomplete_puuids: std::collections::HashSet::new(),
+    });
+
+    let s1 = state.clone();
+    let h1 = tokio::spawn(async move { get_match(false, &s1).await });
+
+    let res1 = h1.await.unwrap();
+    assert!(res1.is_err(), "Build 1 should fail because entitlements returned 500");
+
+    // Verify build_started was incremented, but build_finished was NOT incremented on error
+    assert_eq!(state.build_started.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(state.build_finished.load(std::sync::atomic::Ordering::SeqCst), 0);
+
+    // A second caller should attempt its own build and fail, NOT return stale Ok
+    let res2 = get_match(false, &state).await;
+    assert!(res2.is_err(), "Second call should also fail, never returning stale Ok");
+    assert_eq!(state.build_finished.load(std::sync::atomic::Ordering::SeqCst), 0);
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }

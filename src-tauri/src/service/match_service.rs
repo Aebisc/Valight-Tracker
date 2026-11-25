@@ -21,7 +21,7 @@ use std::sync::Arc;
 use futures::stream::{self, StreamExt};
 use serde_json::Value;
 
-use crate::model::{ApiError, ApiResponse, MatchInfo, SavedMatch, ValorantPlayer};
+use crate::model::{ApiError, ApiResponse, MatchInfo, MatchResult, SavedMatch, ValorantPlayer};
 use crate::riot::{client::RiotResult, config, endpoints, lockfile};
 use crate::service::{disk_cache, party, player, side, stats};
 use crate::state::{AppState, MatchCache};
@@ -92,10 +92,52 @@ async fn save_match_lobby_to_history(state: &AppState, entry: SavedMatch) {
     } else {
         history.insert(0, entry);
     }
+    history.sort_by_key(|a| std::cmp::Reverse(a.saved_at));
     history.truncate(5);
     if let Some(ref dir) = state.cache_dir {
         disk_cache::write_match_history(dir, &history).await;
     }
+}
+
+pub fn extract_match_score(
+    detail: &Value,
+    self_puuid: &str,
+    self_team_id: &str,
+) -> (u32, u32, Option<MatchResult>) {
+    let teams = detail["teams"].as_array();
+    let team = teams.and_then(|arr| {
+        arr.iter().find(|t| {
+            t.get("teamId")
+                .or_else(|| t.get("TeamID"))
+                .and_then(|v| v.as_str())
+                == Some(self_team_id)
+        })
+    });
+    let opp = teams.and_then(|arr| {
+        arr.iter().find(|t| {
+            t.get("teamId")
+                .or_else(|| t.get("TeamID"))
+                .and_then(|v| v.as_str())
+                != Some(self_team_id)
+        })
+    });
+
+    let rounds_won = team
+        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let rounds_lost = opp
+        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+
+    let result = if !self_team_id.is_empty() {
+        Some(stats::get_match_result(detail, self_puuid))
+    } else {
+        None
+    };
+
+    (rounds_won, rounds_lost, result)
 }
 
 pub fn build_saved_match_from_detail(detail: &Value, self_puuid: &str, match_id: &str) -> Option<SavedMatch> {
@@ -175,14 +217,15 @@ pub fn build_saved_match_from_detail(detail: &Value, self_puuid: &str, match_id:
             agent_id,
             agent_name,
             team_id,
-            account_level: p.get("accountLevel").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            account_level: p
+                .get("accountLevel")
+                .or_else(|| p.get("AccountLevel"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32,
             rank,
-            rank_name,
+            rank_name: rank_name.clone(),
             peak_rank: rank,
-            peak_rank_name: RANK_MAP
-                .get(&(rank as u64))
-                .cloned()
-                .unwrap_or_else(|| "Unrated".to_string()),
+            peak_rank_name: rank_name,
             rr: 0,
             earned_rr: 0,
             leaderboard_position: 0,
@@ -212,38 +255,39 @@ pub fn build_saved_match_from_detail(detail: &Value, self_puuid: &str, match_id:
         });
     }
 
-    let teams = detail["teams"].as_array();
-    let team = teams.and_then(|arr| {
-        arr.iter().find(|t| {
-            t.get("teamId")
-                .or_else(|| t.get("TeamID"))
-                .and_then(|v| v.as_str())
-                == Some(&self_team_id)
-        })
-    });
-    let opp = teams.and_then(|arr| {
-        arr.iter().find(|t| {
-            t.get("teamId")
-                .or_else(|| t.get("TeamID"))
-                .and_then(|v| v.as_str())
-                != Some(&self_team_id)
-        })
-    });
+    // Compute party sizes per team (for groups of 2+) and assign party numbers
+    let mut party_counts: HashMap<(String, String), u32> = HashMap::new();
+    for p in &players {
+        if let Some(ref pid) = p.party_id {
+            if !pid.is_empty() {
+                let team_key = if p.team_id.is_empty() {
+                    "default".to_string()
+                } else {
+                    p.team_id.clone()
+                };
+                *party_counts.entry((team_key, pid.clone())).or_insert(0) += 1;
+            }
+        }
+    }
+    for p in &mut players {
+        if let Some(ref pid) = p.party_id {
+            if !pid.is_empty() {
+                let team_key = if p.team_id.is_empty() {
+                    "default".to_string()
+                } else {
+                    p.team_id.clone()
+                };
+                if let Some(&cnt) = party_counts.get(&(team_key, pid.clone())) {
+                    if cnt >= 2 {
+                        p.party_size = Some(cnt);
+                    }
+                }
+            }
+        }
+    }
+    party::assign_party_numbers(&mut players, &HashMap::new());
 
-    let rounds_won = team
-        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u32;
-    let rounds_lost = opp
-        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u32;
-
-    let result = if !self_team_id.is_empty() {
-        Some(stats::get_match_result(detail, self_puuid))
-    } else {
-        None
-    };
+    let (rounds_won, rounds_lost, result) = extract_match_score(detail, self_puuid, &self_team_id);
 
     let match_info_node = &detail["matchInfo"];
     let map_id = match_info_node
@@ -257,13 +301,24 @@ pub fn build_saved_match_from_detail(detail: &Value, self_puuid: &str, match_id:
         .or_else(|| match_info_node.get("GameStartMillis"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    let queue_id = match_info_node
+        .get("queueID")
+        .or_else(|| match_info_node.get("QueueID"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let game_mode = match_info_node
+        .get("gameMode")
+        .or_else(|| match_info_node.get("GameMode"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let (is_deathmatch, _) = resolve_mode_flags(queue_id, game_mode);
 
     Some(SavedMatch {
         match_id: match_id.to_string(),
         match_info: MatchInfo {
             match_id: match_id.to_string(),
             map_id,
-            is_deathmatch: false,
+            is_deathmatch,
             game_state: "INGAME".to_string(),
             starting_side: None,
         },
@@ -454,12 +509,14 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             }
         }
     } else {
-        // Forced refresh: reuse only if a fresh build started after our arrival
-        if state
+        // Forced refresh: reuse only if a fresh build started after our arrival AND finished successfully
+        let s_cur = state
             .build_started
-            .load(std::sync::atomic::Ordering::Acquire)
-            > s0
-        {
+            .load(std::sync::atomic::Ordering::Acquire);
+        let f_cur = state
+            .build_finished
+            .load(std::sync::atomic::Ordering::Acquire);
+        if s_cur > s0 && f_cur > f0 {
             let cache = state.match_cache.lock().await;
             if let Some(ref cached) = *cache {
                 return Ok(ApiResponse {
@@ -477,19 +534,16 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
     state
         .build_started
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    struct BuildDropGuard<'a> {
-        finished: &'a std::sync::atomic::AtomicU64,
+    let res = get_match_inner(force, state).await;
+    if res.is_ok() {
+        state
+            .build_finished
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
     }
-    impl<'a> Drop for BuildDropGuard<'a> {
-        fn drop(&mut self) {
-            self.finished
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-    let _drop_guard = BuildDropGuard {
-        finished: &state.build_finished,
-    };
+    res
+}
 
+async fn get_match_inner(force: bool, state: &AppState) -> Result<ApiResponse, ApiError> {
     let last_state = {
         let cache = state.match_cache.lock().await;
         cache.as_ref().map(|c| c.game_state.clone())
@@ -564,67 +618,72 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
     // MENUS
     if detected == DetectedState::Menus {
-        let old_cache = {
+        let _ = {
             let mut cache = state.match_cache.lock().await;
             cache.take()
         };
 
-        if let Some(prev) = old_cache {
-            if prev.game_state == "INGAME" {
-                if let Some(detail) = endpoints::get_match_details(&state.remote_client, &cfg, &prev.match_id).await {
-                    let slim = disk_cache::slim_match_detail(&detail);
-                    if let Some(ref dir) = state.cache_dir {
-                        disk_cache::write_match_detail(dir, &prev.match_id, &slim).await;
-                    }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
 
-                    let self_team_id = prev
+        const MAX_SCORE_RETRIES: u8 = 10;
+        const PENDING_SCORE_MAX_AGE_MS: u64 = 2 * 60 * 60 * 1000;
+
+        let pending_match_ids: Vec<(String, String)> = {
+            let history = state.match_history.lock().await;
+            let retry_counts = state.score_retry_counts.lock().await;
+            history
+                .iter()
+                .filter(|m| {
+                    if m.result.is_some() {
+                        return false;
+                    }
+                    if now_ms.saturating_sub(m.saved_at) > PENDING_SCORE_MAX_AGE_MS {
+                        return false;
+                    }
+                    if !force {
+                        let count = retry_counts.get(&m.match_id).copied().unwrap_or(0);
+                        if count >= MAX_SCORE_RETRIES {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .map(|m| {
+                    let self_team_id = m
                         .players
                         .iter()
                         .find(|p| p.puuid == cfg.puuid)
-                        .map(|p| p.team_id.as_str())
-                        .unwrap_or("");
-                    let teams = slim["teams"].as_array();
-                    let team = teams.and_then(|arr| {
-                        arr.iter().find(|t| {
-                            t.get("teamId")
-                                .or_else(|| t.get("TeamID"))
-                                .and_then(|v| v.as_str())
-                                == Some(self_team_id)
-                        })
-                    });
-                    let opp = teams.and_then(|arr| {
-                        arr.iter().find(|t| {
-                            t.get("teamId")
-                                .or_else(|| t.get("TeamID"))
-                                .and_then(|v| v.as_str())
-                                != Some(self_team_id)
-                        })
-                    });
+                        .map(|p| p.team_id.clone())
+                        .unwrap_or_default();
+                    (m.match_id.clone(), self_team_id)
+                })
+                .collect()
+        };
 
-                    let rounds_won = team
-                        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as u32;
-                    let rounds_lost = opp
-                        .and_then(|t| t.get("roundsWon").or_else(|| t.get("RoundsWon")))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as u32;
-                    let result = if !self_team_id.is_empty() {
-                        Some(stats::get_match_result(&slim, &cfg.puuid))
-                    } else {
-                        None
-                    };
-
-                    let mut history = state.match_history.lock().await;
-                    if let Some(entry) = history.iter_mut().find(|m| m.match_id == prev.match_id) {
-                        entry.rounds_won = rounds_won;
-                        entry.rounds_lost = rounds_lost;
-                        entry.result = result;
-                    }
-                    if let Some(ref dir) = state.cache_dir {
-                        disk_cache::write_match_history(dir, &history).await;
-                    }
+        for (mid, self_team_id) in pending_match_ids {
+            if let Some(detail) = endpoints::get_match_details(&state.remote_client, &cfg, &mid).await {
+                let slim = disk_cache::slim_match_detail(&detail);
+                if let Some(ref dir) = state.cache_dir {
+                    disk_cache::write_match_detail(dir, &mid, &slim).await;
                 }
+                let (rounds_won, rounds_lost, result) = extract_match_score(&slim, &cfg.puuid, &self_team_id);
+                let mut history = state.match_history.lock().await;
+                if let Some(entry) = history.iter_mut().find(|m| m.match_id == mid) {
+                    entry.rounds_won = rounds_won;
+                    entry.rounds_lost = rounds_lost;
+                    entry.result = result;
+                }
+                state.score_retry_counts.lock().await.remove(&mid);
+                if let Some(ref dir) = state.cache_dir {
+                    disk_cache::write_match_history(dir, &history).await;
+                }
+            } else {
+                let mut retry_counts = state.score_retry_counts.lock().await;
+                let count = retry_counts.entry(mid).or_insert(0);
+                *count = count.saturating_add(1);
             }
         }
 
@@ -644,9 +703,17 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
                     })
                     .unwrap_or_default();
 
+                let mut backfilled_matches: Vec<SavedMatch> = Vec::new();
+
                 for mid in match_ids.iter().take(5) {
-                    if state.match_history.lock().await.iter().any(|m| m.match_id == *mid) {
-                        continue;
+                    if !force {
+                        let h = state.match_history.lock().await;
+                        if let Some(existing) = h.iter().find(|m| m.match_id == *mid) {
+                            let names_populated = !existing.players.is_empty() && existing.players.iter().all(|p| !p.name.is_empty());
+                            if existing.result.is_some() && names_populated {
+                                continue;
+                            }
+                        }
                     }
 
                     let cached_detail = if let Some(ref dir) = state.cache_dir {
@@ -674,14 +741,66 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
                     if let Some(ref d) = detail {
                         if let Some(saved) = build_saved_match_from_detail(d, &cfg.puuid, mid) {
-                            let mut h = state.match_history.lock().await;
-                            h.push(saved);
+                            backfilled_matches.push(saved);
                         }
                     }
                 }
 
+                // Backward compatibility: resolve names for any players with empty names (from older slimmed caches)
+                let missing_puuids: Vec<String> = {
+                    let mut seen = HashSet::new();
+                    for m in &backfilled_matches {
+                        for p in &m.players {
+                            if p.name.is_empty() && !p.puuid.is_empty() {
+                                seen.insert(p.puuid.clone());
+                            }
+                        }
+                    }
+                    seen.into_iter().collect()
+                };
+
+                if !missing_puuids.is_empty() {
+                    let names_raw = endpoints::get_names_from_puuids(&state.remote_client, &cfg, &missing_puuids).await;
+                    let name_map: HashMap<String, (String, String)> = names_raw
+                        .into_iter()
+                        .filter_map(|n| {
+                            let s = n["Subject"].as_str()?.to_string();
+                            let name = n["GameName"]
+                                .as_str()
+                                .or_else(|| n["DisplayName"].as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let tag = n["TagLine"].as_str().unwrap_or("").to_string();
+                            Some((s, (name, tag)))
+                        })
+                        .collect();
+
+                    for m in &mut backfilled_matches {
+                        for p in &mut m.players {
+                            if p.name.is_empty() {
+                                if let Some((name, tag)) = name_map.get(&p.puuid) {
+                                    p.name = name.clone();
+                                    p.tag = tag.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Upsert backfilled matches into match_history
                 let mut h = state.match_history.lock().await;
+                for saved in backfilled_matches {
+                    if let Some(pos) = h.iter().position(|m| m.match_id == saved.match_id) {
+                        h[pos] = saved;
+                    } else {
+                        h.push(saved);
+                    }
+                }
+
+                // Sort descending by saved_at and truncate to 5
+                h.sort_by_key(|a| std::cmp::Reverse(a.saved_at));
                 h.truncate(5);
+
                 if let Some(ref dir) = state.cache_dir {
                     disk_cache::write_match_history(dir, &h).await;
                 }
@@ -823,10 +942,12 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         if let Some(ref c) = *cache {
             if c.game_state == "PREGAME"
                 && resolved_game_state == "INGAME"
-                && (c.match_info.map_id.is_empty() || c.match_info.map_id == map_id)
+                && c.match_id == resolved_match_id
             {
                 for p in &c.players {
-                    map.insert(p.puuid.clone(), p.clone());
+                    if !c.incomplete_puuids.contains(&p.puuid) {
+                        map.insert(p.puuid.clone(), p.clone());
+                    }
                 }
                 ids_map = c.recent_match_ids.clone();
             }
@@ -949,6 +1070,34 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             .or_insert_with(|| (p.name.clone(), p.tag.clone()));
     }
 
+    // Determine active_season_id across the match / all players:
+    // Priority 1: live match season_id if non-empty
+    // Priority 2: scan recent_matches across all players in mmr_comp_results for max MatchStartTime
+    let active_season_id: Option<String> = if !season_id.is_empty() {
+        Some(season_id.clone())
+    } else {
+        mmr_comp_results
+            .values()
+            .filter_map(|(_, comp_opt)| comp_opt.as_ref())
+            .filter_map(|comp| comp["Matches"].as_array())
+            .flatten()
+            .filter_map(|m| {
+                let time = m
+                    .get("MatchStartTime")
+                    .or_else(|| m.get("matchStartTime"))
+                    .and_then(|t| t.as_u64())?;
+                let sid = m
+                    .get("SeasonID")
+                    .or_else(|| m.get("seasonID"))
+                    .and_then(|s| s.as_str())?;
+                Some((time, sid.to_string()))
+            })
+            .max_by_key(|(time, _)| *time)
+            .map(|(_, sid)| sid)
+    };
+
+    let mut incomplete_puuids: HashSet<String> = HashSet::new();
+
     // Build intermediate player data and collect recent match IDs
     struct RawPlayer {
         built: ValorantPlayer,
@@ -1007,7 +1156,10 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
 
         let (mmr_raw, comp_raw) = match mmr_comp_results.get(puuid) {
             Some(v) => v,
-            None => continue,
+            None => {
+                incomplete_puuids.insert(puuid.to_string());
+                continue;
+            }
         };
 
         let mmr_data = mmr_raw
@@ -1039,17 +1191,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             peak_rank = previous_rank;
         }
 
-        let latest_match_season_id = recent_matches
-            .first()
-            .and_then(|m| m["SeasonID"].as_str())
-            .unwrap_or("")
-            .to_string();
-        let current_season = if !latest_match_season_id.is_empty() {
-            Some(latest_match_season_id.clone())
-        } else {
-            player::get_current_season_id(seasonal_info, &season_id)
-        };
-
+        let current_season = active_season_id.clone();
         let current_season_data = current_season
             .as_deref()
             .and_then(|cs| seasonal_info[cs].as_object().map(|_| &seasonal_info[cs]));
@@ -1064,22 +1206,21 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             .and_then(|d| d["NumberOfGames"].as_u64())
             .unwrap_or(0) as u32;
         let is_current_act_rank = current_season.is_some() && current_season_games > 0;
-        let act_winrate = if current_season_games > 0 {
+        let act_winrate = if is_current_act_rank && current_season_games > 0 {
             player::round_pct(current_season_wins as f64 / current_season_games as f64)
         } else {
             0.0
         };
 
-        // Collect current-act match IDs (newest first, stop at season boundary)
-        let current_act_matches: Vec<&Value> = recent_matches
-            .iter()
-            .take_while(|m| {
-                current_season
-                    .as_deref()
-                    .map(|cs| m["SeasonID"].as_str() == Some(cs))
-                    .unwrap_or(true)
-            })
-            .collect();
+        // Collect current-act match IDs (strictly to active_season_id when known)
+        let current_act_matches: Vec<&Value> = if let Some(ref cs) = current_season {
+            recent_matches
+                .iter()
+                .filter(|m| m["SeasonID"].as_str() == Some(cs))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let latest_update = current_act_matches
             .first()
@@ -1113,6 +1254,9 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
             Some((name, tag)) => (name.clone(), tag.clone()),
             None => (String::new(), String::new()),
         };
+        if mmr_raw.is_none() || comp_raw.is_none() || display_name.is_empty() {
+            incomplete_puuids.insert(puuid.to_string());
+        }
         let team_id = p["TeamID"].as_str().unwrap_or("").to_string();
         let account_level = identity["AccountLevel"].as_u64().unwrap_or(0) as u32;
 
@@ -1365,6 +1509,7 @@ pub async fn get_match(force: bool, state: &AppState) -> Result<ApiResponse, Api
         match_info: match_info.clone(),
         self_puuid: cfg.puuid.clone(),
         recent_match_ids: recent_match_ids_map,
+        incomplete_puuids,
     });
 
     if resolved_game_state == "INGAME" {

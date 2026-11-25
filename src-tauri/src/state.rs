@@ -16,7 +16,7 @@ const MATCH_DETAIL_CACHE_SIZE: usize = 500;
 
 use std::sync::atomic::AtomicU64;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Cached result of the last successful `get_match` call.
 #[derive(Debug, Clone)]
@@ -27,6 +27,7 @@ pub struct MatchCache {
     pub match_info: MatchInfo,
     pub self_puuid: String,
     pub recent_match_ids: HashMap<String, Vec<String>>,
+    pub incomplete_puuids: HashSet<String>,
 }
 
 use crate::riot::config::RiotEndpoints;
@@ -53,6 +54,8 @@ pub struct AppState {
     pub cache_dir: Option<PathBuf>,
     /// Last 5 completed match snapshots (full lobby), newest first.
     pub match_history: Mutex<Vec<SavedMatch>>,
+    /// Retry counter for pending match scores post-game
+    pub score_retry_counts: Mutex<HashMap<String, u8>>,
 }
 
 impl AppState {
@@ -92,6 +95,7 @@ impl AppState {
             endpoints_override,
             cache_dir,
             match_history: Mutex::new(Vec::new()),
+            score_retry_counts: Mutex::new(HashMap::new()),
         }
     }
 }

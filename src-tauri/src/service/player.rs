@@ -110,27 +110,29 @@ pub fn get_peak_rank(
 
 // ─── getCurrentSeasonId ───────────────────────────────────────────────────────
 
-/// Port of getCurrentSeasonId(). Returns the most recent season that has games,
-/// falling back to the one with the lexicographically largest season ID.
-pub fn get_current_season_id(seasonal_info: &Value, match_season_id: &str) -> Option<String> {
-    if !match_season_id.is_empty() && seasonal_info[match_season_id].is_object() {
+/// Returns the current season ID:
+/// Priority 1: match_season_id if non-empty
+/// Priority 2: the SeasonID from recent_matches with the maximum MatchStartTime
+pub fn get_current_season_id(recent_matches: &[Value], match_season_id: &str) -> Option<String> {
+    if !match_season_id.is_empty() {
         return Some(match_season_id.to_string());
     }
 
-    let mut best: Option<String> = None;
-    if let Some(obj) = seasonal_info.as_object() {
-        for (season_id, season) in obj {
-            let games = season["NumberOfGames"].as_u64().unwrap_or(0);
-            if games > 0 {
-                match &best {
-                    None => best = Some(season_id.clone()),
-                    Some(b) if season_id > b => best = Some(season_id.clone()),
-                    _ => {}
-                }
-            }
-        }
-    }
-    best
+    recent_matches
+        .iter()
+        .filter_map(|m| {
+            let time = m
+                .get("MatchStartTime")
+                .or_else(|| m.get("matchStartTime"))
+                .and_then(|t| t.as_u64())?;
+            let sid = m
+                .get("SeasonID")
+                .or_else(|| m.get("seasonID"))
+                .and_then(|s| s.as_str())?;
+            Some((time, sid.to_string()))
+        })
+        .max_by_key(|(time, _)| *time)
+        .map(|(_, sid)| sid)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -171,25 +173,30 @@ mod tests {
     }
 
     #[test]
-    fn current_season_falls_back_to_latest() {
-        let info = json!({
-            "s2023-1": { "NumberOfGames": 10 },
-            "s2024-1": { "NumberOfGames": 5 },
-        });
+    fn current_season_finds_latest_by_start_time() {
+        let matches = vec![
+            json!({ "SeasonID": "season-old", "MatchStartTime": 1000u64 }),
+            json!({ "SeasonID": "season-new", "MatchStartTime": 2000u64 }),
+        ];
         assert_eq!(
-            get_current_season_id(&info, ""),
-            Some("s2024-1".to_string())
+            get_current_season_id(&matches, ""),
+            Some("season-new".to_string())
         );
     }
 
     #[test]
     fn current_season_uses_match_season_if_present() {
-        let info = json!({
-            "s2024-1": { "NumberOfGames": 5 },
-        });
+        let matches = vec![
+            json!({ "SeasonID": "season-old", "MatchStartTime": 2000u64 }),
+        ];
         assert_eq!(
-            get_current_season_id(&info, "s2024-1"),
-            Some("s2024-1".to_string())
+            get_current_season_id(&matches, "season-live"),
+            Some("season-live".to_string())
         );
+    }
+
+    #[test]
+    fn current_season_returns_none_when_no_matches_and_empty_match_season() {
+        assert_eq!(get_current_season_id(&[], ""), None);
     }
 }
